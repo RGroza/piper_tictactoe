@@ -1,0 +1,6 @@
+# Empty request
+
+---
+
+# Response
+int32[9] results   # 0 = O, 1 = X, -1 = None
