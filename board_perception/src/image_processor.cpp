@@ -15,7 +15,7 @@ constexpr float BOARD_ASPECT_RATIO = BOARD_HEIGHT / BOARD_WIDTH;
 
 ImageProcessor::ImageProcessor(bool debug) : debug_(debug) {
     debug_output_dir_ = "/home/robert/ROS/Final/ros2_ws/src/tictactoe/board_perception/debug";
-    std::cout << "ImageProcessor init: debug=" << debug_ << ", dir=" << debug_output_dir_ << std::endl;
+    // std::cout << "ImageProcessor init: debug=" << debug_ << ", dir=" << debug_output_dir_ << std::endl;
 }
 
 void ImageProcessor::saveDebug(const std::string& name, const cv::Mat& img) {
@@ -24,18 +24,9 @@ void ImageProcessor::saveDebug(const std::string& name, const cv::Mat& img) {
     if (img.empty())
         return;
 
-    // create directory if missing
     std::filesystem::create_directories(debug_output_dir_);
-
-    // zero-padded counter
-    // int id = debug_counter_.load();
-    // char prefix[16];
-    // snprintf(prefix, sizeof(prefix), "%04d_", id);
-
     std::string filename = debug_output_dir_ + "/" + name + ".png";
-
     cv::imwrite(filename, img);
-
     std::cout << "Saved debug image: " << filename << std::endl;
 }
 
@@ -122,7 +113,7 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
     for (auto& c : contours) {
         int area = contourArea(c);
         if (area > 10000 && area < minContourArea) {
-            cout << "Contour area: " << area << endl;
+            // cout << "Contour area: " << area << endl;
             minContourArea = area;
             inner          = c;
         }
@@ -186,10 +177,10 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
     saveDebug("board", board);
 
     // --------------------------------------------------------
-    // 6. Detect drawing
+    // 6. Convert to grayscale to detect drawing
     // --------------------------------------------------------
-    cvtColor(board, hsv, COLOR_BGR2HSV);
-    inRange(hsv, Scalar(30, 0, 130), Scalar(120, 120, 200), mask);
+    cvtColor(board, board, COLOR_BGR2GRAY);
+    inRange(board, Scalar(130), Scalar(255), mask);
     saveDebug("mask_inside_board", mask);
 
     Mat edges;
@@ -200,7 +191,7 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
     // 7. Hough Lines
     // --------------------------------------------------------
     vector<Vec4i> lines;
-    HoughLinesP(edges, lines, 1, CV_PI / 180, 10, 150, 50);
+    HoughLinesP(edges, lines, 1, CV_PI / 180, 10, 0.15 * BOARD_IMAGE_WIDTH, 0.05 * BOARD_IMAGE_WIDTH);
 
     if (lines.empty()) {
         cout << "No lines detected!" << endl;
@@ -208,21 +199,22 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
     }
 
     vector<Vec4i> vertical, horizontal;
+    int pixel_threshold = int(0.02 * BOARD_IMAGE_WIDTH);
     for (auto& L : lines) {
         int dx = abs(L[0] - L[2]);
         int dy = abs(L[1] - L[3]);
 
-        if (dx < 30)
+        if (dx < pixel_threshold)
             vertical.push_back(L);
-        else if (dy < 30)
+        else if (dy < pixel_threshold)
             horizontal.push_back(L);
     }
 
     Mat lineDisplay = board.clone();
     for (auto& L : vertical)
-        line(lineDisplay, Point(L[0], L[1]), Point(L[2], L[3]), Scalar(0, 0, 255), 2);
+        line(lineDisplay, Point(L[0], L[1]), Point(L[2], L[3]), Scalar(0), 2);
     for (auto& L : horizontal)
-        line(lineDisplay, Point(L[0], L[1]), Point(L[2], L[3]), Scalar(255, 0, 0), 2);
+        line(lineDisplay, Point(L[0], L[1]), Point(L[2], L[3]), Scalar(255), 2);
 
     saveDebug("detected_lines", lineDisplay);
 
@@ -246,9 +238,9 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
 
     Mat edgeDisplay = board.clone();
     for (auto& xe : xEdges)
-        line(edgeDisplay, Point(xe, 0), Point(xe, board.rows - 1), Scalar(0, 255, 0), 2);
+        line(edgeDisplay, Point(xe, 0), Point(xe, board.rows - 1), Scalar(0), 2);
     for (auto& ye : yEdges)
-        line(edgeDisplay, Point(0, ye), Point(board.cols - 1, ye), Scalar(0, 255, 0), 2);
+        line(edgeDisplay, Point(0, ye), Point(board.cols - 1, ye), Scalar(0), 2);
 
     saveDebug("detected_edges", edgeDisplay);
 
@@ -284,9 +276,9 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
     Mat cellDisplay = board.clone();
     int idx         = 0;
     for (auto& c : cellCorners) {
-        rectangle(cellDisplay, Point(c[0], c[1]), Point(c[2], c[3]), Scalar(255, 0, 0), 2);
+        rectangle(cellDisplay, Point(c[0], c[1]), Point(c[2], c[3]), Scalar(255), 2);
         putText(cellDisplay, to_string(idx), Point((c[0] + c[2]) / 2 - 10, (c[1] + c[3]) / 2 + 10),
-                FONT_HERSHEY_SIMPLEX, 1, Scalar(255, 0, 0), 2);
+                FONT_HERSHEY_SIMPLEX, 1, Scalar(255), 2);
         idx++;
     }
     saveDebug("cells", cellDisplay);
@@ -313,14 +305,14 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
 
         Mat cellEdges = edges(cellRect).clone();
         vector<Vec4i> lines;
-        HoughLinesP(cellEdges, lines, 1, CV_PI / 180, 50, 50, 10);
+        HoughLinesP(cellEdges, lines, 1, CV_PI / 180, 50, 0.05 * BOARD_IMAGE_WIDTH, 0.015 * BOARD_IMAGE_WIDTH);
 
         bool foundX = false;
         for (auto& L : lines) {
             double angle = abs(atan2(L[3] - L[1], L[2] - L[0])) * 180.0 / CV_PI;
             if ((angle > 25 && angle < 75) || (angle > 105 && angle < 155)) {
                 line(board, Point(L[0] + corners[0], L[1] + corners[1]), Point(L[2] + corners[0], L[3] + corners[1]),
-                     Scalar(255, 0, 0), 3);
+                     Scalar(255), 3);
                 foundX = true;
                 break;
             }
@@ -332,16 +324,14 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
         }
 
         // O detection
-        Mat gray;
-        cvtColor(cells[i], gray, COLOR_BGR2GRAY);
-        GaussianBlur(gray, gray, Size(5, 5), 0);
-
+        GaussianBlur(cells[i], cells[i], Size(5, 5), 0);
         vector<Vec3f> circles;
-        HoughCircles(gray, circles, HOUGH_GRADIENT, 1, 200, 10, 50, 50, 300);
+        HoughCircles(cells[i], circles, HOUGH_GRADIENT, 1, 200, 10, 50, 0.05 * BOARD_IMAGE_WIDTH,
+                     0.33 * BOARD_IMAGE_WIDTH);
 
         if (!circles.empty()) {
             for (auto& c : circles)
-                circle(board, Point(c[0] + corners[0], c[1] + corners[1]), c[2], Scalar(0, 255, 0), 3);
+                circle(board, Point(c[0] + corners[0], c[1] + corners[1]), c[2], Scalar(0), 3);
             result[i] = 0;
             continue;
         }
