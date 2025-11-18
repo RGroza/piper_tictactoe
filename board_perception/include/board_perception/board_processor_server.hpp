@@ -19,8 +19,7 @@ class BoardProcessorServer : public rclcpp::Node {
 
     ImageProcessor processor_;
 
-    void image_callback(const sensor_msgs::msg::Image::ConstSharedPtr msg);
-
-    void handle_service(const std::shared_ptr<board_perception::srv::ProcessBoard::Request> request,
-                        std::shared_ptr<board_perception::srv::ProcessBoard::Response> response);
+    void imageCallback(const sensor_msgs::msg::Image::ConstSharedPtr msg);
+    void handleService(const std::shared_ptr<board_perception::srv::ProcessBoard::Request> request,
+                       std::shared_ptr<board_perception::srv::ProcessBoard::Response> response);
 };
