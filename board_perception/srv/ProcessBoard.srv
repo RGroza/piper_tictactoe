@@ -2,5 +2,5 @@
 
 ---
 
-# Response
-int32[9] results   # 0 = O, 1 = X, -1 = None
+# 0 = O, 1 = X, -1 = None
+int32[9] results

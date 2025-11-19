@@ -2,7 +2,7 @@
 
 using std::placeholders::_1;
 
-BoardProcessorServer::BoardProcessorServer() : Node("board_processor_server"), processor_(true) {
+BoardProcessorServer::BoardProcessorServer() : Node("ttt_board_processor_server"), processor_(true) {
     image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
         "/image_raw", rclcpp::SensorDataQoS(), std::bind(&BoardProcessorServer::imageCallback, this, _1));
 
@@ -10,14 +10,14 @@ BoardProcessorServer::BoardProcessorServer() : Node("board_processor_server"), p
         "process_board",
         std::bind(&BoardProcessorServer::handleService, this, std::placeholders::_1, std::placeholders::_2));
 
-    RCLCPP_INFO(this->get_logger(), "BoardProcessorServer node started.");
+    RCLCPP_INFO(this->get_logger(), "BoardProcessorServer node started");
 }
 
 void BoardProcessorServer::imageCallback(const sensor_msgs::msg::Image::ConstSharedPtr msg) {
     latest_image_ = msg;
 }
 
-void BoardProcessorServer::handleService(const std::shared_ptr<board_perception::srv::ProcessBoard::Request>,
+void BoardProcessorServer::handleService(const std::shared_ptr<board_perception::srv::ProcessBoard::Request> request,
                                          std::shared_ptr<board_perception::srv::ProcessBoard::Response> response) {
     for (int i = 0; i < 9; i++)
         response->results[i] = -1;
