@@ -22,6 +22,8 @@ void BoardProcessorServer::handleService(const std::shared_ptr<board_perception:
     for (int i = 0; i < 9; i++)
         response->results[i] = -1;
 
+    response->success = false;
+
     if (!latest_image_) {
         RCLCPP_WARN(this->get_logger(), "No image received yet on /camera/color/image_raw");
         return;
@@ -45,6 +47,8 @@ void BoardProcessorServer::handleService(const std::shared_ptr<board_perception:
 
     for (int i = 0; i < 9; i++)
         response->results[i] = result[i];
+
+    response->success = true;
 
     RCLCPP_INFO(this->get_logger(), "Board processed – result returned.");
 }
