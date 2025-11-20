@@ -35,6 +35,13 @@ ament_target_dependencies(trajectory_executor
   tf2_geometry_msgs
 )
 
+target_include_directories(trajectory_executor PUBLIC
+  /opt/ros/humble/include/tf2
+  /opt/ros/humble/include/tf2_ros
+  /opt/ros/humble/include/tf2_geometry_msgs
+  /opt/ros/humble/include/geometry_msgs
+)
+
 rosidl_target_interfaces(trajectory_executor
   ${PROJECT_NAME} "rosidl_typesupport_cpp"
 )

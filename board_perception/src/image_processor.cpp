@@ -14,7 +14,8 @@ constexpr float BOARD_ASPECT_RATIO = BOARD_HEIGHT / BOARD_WIDTH;
 } // namespace
 
 ImageProcessor::ImageProcessor(bool debug) : debug_(debug) {
-    debug_output_dir_ = "/home/robert/ROS/Final/ros2_ws/src/tictactoe/board_perception/debug";
+    // debug_output_dir_ = "/home/robert/ROS/Final/ros2_ws/src/tictactoe/board_perception/debug";
+    debug_output_dir_ = "/home/user/ros2_ws/src/piper_tictactoe/board_perception/debug";
 }
 
 void ImageProcessor::saveDebug(const std::string& name, const cv::Mat& img) {
@@ -79,13 +80,14 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
         return result;
     }
 
-    Mat hsv, mask;
+    Mat gray, mask;
 
     // --------------------------------------------------------
-    // 1. Convert to HSV and mask for board color
+    // 1. Convert to grayscale and mask
     // --------------------------------------------------------
-    cvtColor(frame, hsv, COLOR_BGR2HSV);
-    inRange(hsv, Scalar(70, 0, 200), Scalar(180, 255, 255), mask);
+    cvtColor(frame, gray, COLOR_BGR2GRAY);
+    saveDebug("frame", frame);
+    inRange(gray, Scalar(50), Scalar(255), mask);
     saveDebug("mask", mask);
 
     // --------------------------------------------------------
@@ -163,10 +165,10 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
     saveDebug("board", board);
 
     // --------------------------------------------------------
-    // 6. Convert inside board to grayscale & threshold
+    // 6. Convert inside board to grayscale and mask
     // --------------------------------------------------------
     cvtColor(board, board, COLOR_BGR2GRAY);
-    inRange(board, Scalar(130), Scalar(255), mask);
+    inRange(board, Scalar(40), Scalar(255), mask);
     saveDebug("mask_inside_board", mask);
 
     Mat edges;

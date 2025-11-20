@@ -4,7 +4,7 @@ using std::placeholders::_1;
 
 BoardProcessorServer::BoardProcessorServer() : Node("ttt_board_processor_server"), processor_(true) {
     image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
-        "/image_raw", rclcpp::SensorDataQoS(), std::bind(&BoardProcessorServer::imageCallback, this, _1));
+        "/camera/D435/color/image_raw", rclcpp::SensorDataQoS(), std::bind(&BoardProcessorServer::imageCallback, this, _1));
 
     srv_ = this->create_service<board_perception::srv::ProcessBoard>(
         "process_board",
