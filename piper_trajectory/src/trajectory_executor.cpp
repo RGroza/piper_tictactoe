@@ -14,11 +14,11 @@ using namespace std::chrono_literals;
 
 namespace {
 constexpr float HOVERING_Z    = 0.204f;
-constexpr float DRAW_Z_OFFSET = 0.004f;
+constexpr float DRAW_Z_OFFSET = 0.005f;
 constexpr float GRID_SIZE     = 0.045f;
 constexpr float CROSS_WIDTH   = 0.025f;
 constexpr float CIRCLE_RADIUS = 0.015f;
-constexpr float GRID_X_OFFSET = 0.025f;
+constexpr float GRID_X_OFFSET = 0.027f;
 constexpr float GRID_Y_OFFSET = -0.02f;
 } // namespace
 
@@ -119,24 +119,24 @@ void TrajectoryExecutor::drawLine(const Pose& start, float dx, float dy) {
 void TrajectoryExecutor::drawGrid() {
     // Vertical line 1
     Pose start = waypoints_[0];
-    start.position.x += GRID_SIZE / 2;
-    start.position.y -= GRID_SIZE / 2;
-    drawLine(start, -3 * GRID_SIZE, 0.0f);
-    // Vertical line 2
-    start = waypoints_[3];
-    start.position.x += GRID_SIZE / 2;
-    start.position.y -= GRID_SIZE / 2;
-    drawLine(start, -3 * GRID_SIZE, 0.0f);
-    // Horizontal line 1
-    start = waypoints_[0];
     start.position.x -= GRID_SIZE / 2;
-    start.position.y += GRID_SIZE / 2;
-    drawLine(start, 0.0f, -3 * GRID_SIZE);
-    // Horizontal line 2
+    start.position.y -= GRID_SIZE / 2;
+    drawLine(start, 0.0f, 3 * GRID_SIZE);
+    // Vertical line 2
     start = waypoints_[1];
     start.position.x -= GRID_SIZE / 2;
+    start.position.y -= GRID_SIZE / 2;
+    drawLine(start, 0.0f, 3 * GRID_SIZE);
+    // Horizontal line 1
+    start = waypoints_[0];
+    start.position.x += GRID_SIZE / 2;
     start.position.y += GRID_SIZE / 2;
-    drawLine(start, 0.0f, -3 * GRID_SIZE);
+    drawLine(start, -3 * GRID_SIZE, 0.0f);
+    // Horizontal line 2
+    start = waypoints_[3];
+    start.position.x += GRID_SIZE / 2;
+    start.position.y += GRID_SIZE / 2;
+    drawLine(start, -3 * GRID_SIZE, 0.0f);
 }
 
 void TrajectoryExecutor::drawCross(int cell_number) {
@@ -237,16 +237,16 @@ void TrajectoryExecutor::moveToHome() {
 
 void TrajectoryExecutor::moveToClear() {
     Pose clear;
-    clear.position.x    = 0.225;
-    clear.position.y    = -0.108;
+    clear.position.x    = 0.227;
+    clear.position.y    = -0.112;
     clear.position.z    = 0.212;
     clear.orientation.x = 0.0f;
     clear.orientation.y = 1.0f;
     clear.orientation.z = 0.0f;
     clear.orientation.w = 0.0f;
     moveToGoalPose(clear);
-    moveByDelta(0.0f, 0.0f, -0.008f);
-    moveByDelta(0.0f, 0.0f, +0.008f);
+    moveByDelta(0.0f, 0.0f, -0.01f);
+    moveByDelta(0.0f, 0.0f, +0.01f);
 }
 
 // --------------------------------------------------

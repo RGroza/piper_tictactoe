@@ -64,6 +64,10 @@ class MoveManager : public rclcpp::Node {
         } else {
             // Compute best robot move
             cell = this->bestMove(board_response->board, request->symbol) + 1;
+            if (cell == 0) {
+                serviceFailure(response, "Board is already full");
+                return;
+            }
             RCLCPP_INFO(this->get_logger(), "Robot best move on cell %d", cell);
         }
 
@@ -118,6 +122,14 @@ class MoveManager : public rclcpp::Node {
 
         int best_score = numeric_limits<int>::lowest();
         int best_cell  = -1;
+
+        bool empty = true;
+        for (int i = 0; i < 9; i++)
+            if (flat_board[i] > -1)
+                empty = false;
+
+        if (empty)
+            return 4; // return middle cell if empty
 
         // Try all free cells
         for (int i = 0; i < 9; i++) {
