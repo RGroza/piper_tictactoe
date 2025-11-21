@@ -2,6 +2,5 @@
 
 ---
 
-# 0 = O, 1 = X, -1 = None
-int32[9] results
+int32[9] board  # 0 = O, 1 = X, -1 = None
 bool success

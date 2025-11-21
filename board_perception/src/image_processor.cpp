@@ -14,20 +14,20 @@ constexpr float BOARD_ASPECT_RATIO = BOARD_HEIGHT / BOARD_WIDTH;
 } // namespace
 
 ImageProcessor::ImageProcessor(bool debug) : debug_(debug) {
-    // debug_output_dir_ = "/home/robert/ROS/Final/ros2_ws/src/tictactoe/board_perception/debug";
     debug_output_dir_ = "/home/user/ros2_ws/src/piper_tictactoe/board_perception/debug";
+    // debug_output_dir_ = "/home/robert/ROS/Final/ros2_ws/src/tictactoe/board_perception/debug";
 }
 
-void ImageProcessor::saveDebug(const std::string& name, const cv::Mat& img) {
+void ImageProcessor::saveDebug(const string& name, const cv::Mat& img) {
     if (!debug_)
         return;
     if (img.empty())
         return;
 
-    std::filesystem::create_directories(debug_output_dir_);
-    std::string filename = debug_output_dir_ + "/" + name + ".png";
+    filesystem::create_directories(debug_output_dir_);
+    string filename = debug_output_dir_ + "/" + name + ".png";
     cv::imwrite(filename, img);
-    std::cout << "Saved debug image: " << filename << std::endl;
+    cout << "Saved debug image: " << filename << endl;
 }
 
 void ImageProcessor::orderPoints(vector<Point2f>& corner_pts) {
@@ -71,13 +71,10 @@ int ImageProcessor::findClosestEdge(const vector<Vec4i>& lines, int coor, bool v
     return closest;
 }
 
-std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
-    std::array<int, 9> result;
-    result.fill(-1);
-
+bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
     if (frame.empty()) {
         cout << "Empty frame provided to ImageProcessor::process" << endl;
-        return result;
+        return false;
     }
 
     Mat gray, mask;
@@ -87,7 +84,7 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
     // --------------------------------------------------------
     cvtColor(frame, gray, COLOR_BGR2GRAY);
     saveDebug("frame", frame);
-    inRange(gray, Scalar(50), Scalar(255), mask);
+    inRange(gray, Scalar(160), Scalar(255), mask);
     saveDebug("mask", mask);
 
     // --------------------------------------------------------
@@ -108,11 +105,11 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
     }
 
     if (inner.empty()) {
-        return result;
+        return false;
     }
 
     Mat board_contour = frame.clone();
-    drawContours(board_contour, vector<vector<Point>>{inner}, -1, Scalar(0, 255, 0), 3);
+    drawContours(board_contour, vector<vector<Point>>{inner}, -1, Scalar(0, 255, 0), 2);
 
     // --------------------------------------------------------
     // 3. Approximate corner points
@@ -123,13 +120,13 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
 
     if (corner_pts.size() != 4) {
         saveDebug("corner_points", board_contour);
-        return result;
+        return false;
     }
 
     orderPoints(corner_pts);
 
     for (auto& p : corner_pts)
-        circle(board_contour, p, 5, Scalar(0, 0, 255), -1);
+        circle(board_contour, p, 5, Scalar(255, 0, 0), -1);
 
     saveDebug("corner_points", board_contour);
 
@@ -158,21 +155,28 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
 
     if (x < 0 || y < 0 || x + w > warped.cols || y + h > warped.rows) {
         cout << "Crop dimensions out of bounds!" << endl;
-        return result;
+        return false;
     }
 
     Mat board = warped(Rect(x, y, w, h)).clone();
     saveDebug("board", board);
 
     // --------------------------------------------------------
-    // 6. Convert inside board to grayscale and mask
+    // 6. Use adaptive threshold and Canny to find edges
     // --------------------------------------------------------
-    cvtColor(board, board, COLOR_BGR2GRAY);
-    inRange(board, Scalar(40), Scalar(255), mask);
-    saveDebug("mask_inside_board", mask);
+    cvtColor(board, gray, COLOR_BGR2GRAY);
+
+    Mat blurred;
+    GaussianBlur(gray, blurred, Size(11, 11), 2.0);
+
+    Ptr<CLAHE> clahe = createCLAHE(2.0);
+    Mat eq;
+    clahe->apply(blurred, eq);
+
+    adaptiveThreshold(eq, mask, 255, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY_INV, 31, -5);
 
     Mat edges;
-    Canny(mask, edges, 50, 150);
+    Canny(mask, edges, 30, 100);
     saveDebug("edges", edges);
 
     // --------------------------------------------------------
@@ -183,7 +187,7 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
 
     if (lines.empty()) {
         cout << "No lines detected!" << endl;
-        return result;
+        return false;
     }
 
     vector<Vec4i> vertical, horizontal;
@@ -193,17 +197,19 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
         int dx = abs(L[0] - L[2]);
         int dy = abs(L[1] - L[3]);
 
-        if (dx < pixel_threshold)
+        if (dx < pixel_threshold && ((L[0] > 0.23 * board.cols && L[0] < 0.43 * board.cols) ||
+                                     (L[0] > 0.57 * board.cols && L[0] < 0.77 * board.cols)))
             vertical.push_back(L);
-        else if (dy < pixel_threshold)
+        else if (dy < pixel_threshold && ((L[1] > 0.23 * board.rows && L[1] < 0.43 * board.rows) ||
+                                          (L[1] > 0.57 * board.rows && L[1] < 0.77 * board.rows)))
             horizontal.push_back(L);
     }
 
     Mat line_display = board.clone();
     for (auto& L : vertical)
-        line(line_display, Point(L[0], L[1]), Point(L[2], L[3]), Scalar(0), 2);
+        line(line_display, Point(L[0], L[1]), Point(L[2], L[3]), Scalar(0, 255, 0), 2);
     for (auto& L : horizontal)
-        line(line_display, Point(L[0], L[1]), Point(L[2], L[3]), Scalar(255), 2);
+        line(line_display, Point(L[0], L[1]), Point(L[2], L[3]), Scalar(0, 255, 0), 2);
 
     saveDebug("detected_lines", line_display);
 
@@ -228,9 +234,9 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
 
     Mat edge_display = board.clone();
     for (auto& xe : x_edges)
-        line(edge_display, Point(xe, 0), Point(xe, board.rows - 1), Scalar(0), 2);
+        line(edge_display, Point(xe, 0), Point(xe, board.rows - 1), Scalar(0, 255, 0), 2);
     for (auto& ye : y_edges)
-        line(edge_display, Point(0, ye), Point(board.cols - 1, ye), Scalar(0), 2);
+        line(edge_display, Point(0, ye), Point(board.cols - 1, ye), Scalar(0, 255, 0), 2);
 
     saveDebug("detected_edges", edge_display);
 
@@ -240,7 +246,7 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
     vector<Mat> cells;
     vector<array<int, 4>> cell_corners;
 
-    for (int i = 4; i >= 0; i -= 2) {
+    for (int i = 0; i < 6; i += 2) {
         for (int j = 0; j < 6; j += 2) {
             int x1 = x_edges[j];
             int x2 = x_edges[j + 1];
@@ -250,11 +256,11 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
             Rect r(x1, y1, x2 - x1, y2 - y1);
             if (r.x < 0 || r.y < 0 || r.x + r.width > board.cols || r.y + r.height > board.rows) {
                 cout << "Cell extraction out of bounds!" << endl;
-                return result;
+                return false;
             }
             if (r.width <= 0 || r.height <= 0) {
                 cout << "Invalid cell dimensions!" << endl;
-                return result;
+                return false;
             }
 
             cells.push_back(board(r).clone());
@@ -265,16 +271,16 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
     Mat cell_display = board.clone();
     int idx          = 0;
     for (auto& c : cell_corners) {
-        rectangle(cell_display, Point(c[0], c[1]), Point(c[2], c[3]), Scalar(255), 2);
-        putText(cell_display, to_string(idx), Point((c[0] + c[2]) / 2 - 10, (c[1] + c[3]) / 2 + 10),
-                FONT_HERSHEY_SIMPLEX, 1, Scalar(255), 2);
+        rectangle(cell_display, Point(c[0], c[1]), Point(c[2], c[3]), Scalar(0, 255, 0), 2);
+        putText(cell_display, to_string(idx + 1), Point((c[0] + c[2]) / 2 - 10, (c[1] + c[3]) / 2 + 10),
+                FONT_HERSHEY_SIMPLEX, 1, Scalar(0, 255, 0), 2);
         idx++;
     }
     saveDebug("cells", cell_display);
 
     if (cells.size() != 9) {
         cout << "Failed to extract 9 cells!" << endl;
-        return result;
+        return false;
     }
 
     // --------------------------------------------------------
@@ -288,7 +294,6 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
         if (cell_rect.x < 0 || cell_rect.y < 0 || cell_rect.x + cell_rect.width > edges.cols ||
             cell_rect.y + cell_rect.height > edges.rows) {
             cout << "Cell rect out of bounds for cell " << i << endl;
-            result[i] = -1;
             continue;
         }
 
@@ -301,7 +306,7 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
             double angle = abs(atan2(L[3] - L[1], L[2] - L[0])) * 180.0 / CV_PI;
             if ((angle > 25 && angle < 75) || (angle > 105 && angle < 155)) {
                 line(board, Point(L[0] + corners[0], L[1] + corners[1]), Point(L[2] + corners[0], L[3] + corners[1]),
-                     Scalar(255), 3);
+                     Scalar(255, 255, 0), 3);
                 found_x = true;
                 break;
             }
@@ -312,15 +317,17 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
             continue;
         }
 
-        GaussianBlur(cells[i], cells[i], Size(5, 5), 0);
+        Mat gray_cell;
+        cvtColor(cells[i], gray_cell, COLOR_BGR2GRAY);
+        GaussianBlur(gray_cell, gray_cell, Size(5, 5), 0);
 
         vector<Vec3f> circles;
-        HoughCircles(cells[i], circles, HOUGH_GRADIENT, 1, 200, 10, 50, 0.05 * BOARD_IMAGE_WIDTH,
+        HoughCircles(gray_cell, circles, HOUGH_GRADIENT, 1, 200, 10, 50, 0.05 * BOARD_IMAGE_WIDTH,
                      0.33 * BOARD_IMAGE_WIDTH);
 
         if (!circles.empty()) {
             for (auto& c : circles)
-                circle(board, Point(c[0] + corners[0], c[1] + corners[1]), c[2], Scalar(0), 3);
+                circle(board, Point(c[0] + corners[0], c[1] + corners[1]), c[2], Scalar(0, 255, 0), 3);
             result[i] = 0;
             continue;
         }
@@ -330,5 +337,5 @@ std::array<int, 9> ImageProcessor::process(const cv::Mat& frame) {
 
     saveDebug("final_detection", board);
 
-    return result;
+    return true;
 }

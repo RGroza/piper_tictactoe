@@ -3,8 +3,9 @@
 using std::placeholders::_1;
 
 BoardProcessorServer::BoardProcessorServer() : Node("ttt_board_processor_server"), processor_(true) {
-    image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
-        "/camera/D435/color/image_raw", rclcpp::SensorDataQoS(), std::bind(&BoardProcessorServer::imageCallback, this, _1));
+    image_sub_ =
+        this->create_subscription<sensor_msgs::msg::Image>("/camera/D435/color/image_raw", rclcpp::SensorDataQoS(),
+                                                           std::bind(&BoardProcessorServer::imageCallback, this, _1));
 
     srv_ = this->create_service<board_perception::srv::ProcessBoard>(
         "process_board",
@@ -20,7 +21,7 @@ void BoardProcessorServer::imageCallback(const sensor_msgs::msg::Image::ConstSha
 void BoardProcessorServer::handleService(const std::shared_ptr<board_perception::srv::ProcessBoard::Request> request,
                                          std::shared_ptr<board_perception::srv::ProcessBoard::Response> response) {
     for (int i = 0; i < 9; i++)
-        response->results[i] = -1;
+        response->board[i] = -1;
 
     response->success = false;
 
@@ -43,10 +44,16 @@ void BoardProcessorServer::handleService(const std::shared_ptr<board_perception:
         return;
     }
 
-    auto result = processor_.process(frame);
+    std::array<int, 9> board;
+    board.fill(-1);
+
+    if (!processor_.process(frame, board)) {
+        RCLCPP_ERROR(this->get_logger(), "Board processing failed");
+        return;
+    }
 
     for (int i = 0; i < 9; i++)
-        response->results[i] = result[i];
+        response->board[i] = board[i];
 
     response->success = true;
 

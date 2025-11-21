@@ -6,7 +6,7 @@
 class ImageProcessor {
   public:
     ImageProcessor(bool debug);
-    std::array<int, 9> process(const cv::Mat& frame);
+    bool process(const cv::Mat& frame, std::array<int, 9>& result);
 
   private:
     bool debug_;

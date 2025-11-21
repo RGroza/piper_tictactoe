@@ -1,0 +1,9 @@
+int32 mode         # 0 = human move, 1 = robot move
+int32 symbol       # 0 = O, 1 = X
+int32 cell_number  # human move; ignored if robot move
+
+---
+
+bool success
+string message
+int32[9] board     # updated board after processing
