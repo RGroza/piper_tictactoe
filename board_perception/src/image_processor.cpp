@@ -84,7 +84,7 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
     // --------------------------------------------------------
     cvtColor(frame, gray, COLOR_BGR2GRAY);
     saveDebug("frame", frame);
-    inRange(gray, Scalar(160), Scalar(255), mask);
+    inRange(gray, Scalar(80), Scalar(255), mask);
     saveDebug("mask", mask);
 
     // --------------------------------------------------------

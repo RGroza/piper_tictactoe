@@ -13,12 +13,12 @@ static const std::string PLANNING_GROUP_ROBOT = "arm";
 using namespace std::chrono_literals;
 
 namespace {
-constexpr float HOVERING_Z    = 0.201f;
+constexpr float HOVERING_Z    = 0.204f;
 constexpr float DRAW_Z_OFFSET = 0.004f;
 constexpr float GRID_SIZE     = 0.045f;
 constexpr float CROSS_WIDTH   = 0.025f;
 constexpr float CIRCLE_RADIUS = 0.015f;
-constexpr float GRID_X_OFFSET = 0.017f;
+constexpr float GRID_X_OFFSET = 0.025f;
 constexpr float GRID_Y_OFFSET = -0.02f;
 } // namespace
 
@@ -237,7 +237,7 @@ void TrajectoryExecutor::moveToHome() {
 
 void TrajectoryExecutor::moveToClear() {
     Pose clear;
-    clear.position.x    = 0.217;
+    clear.position.x    = 0.225;
     clear.position.y    = -0.108;
     clear.position.z    = 0.212;
     clear.orientation.x = 0.0f;
@@ -245,8 +245,8 @@ void TrajectoryExecutor::moveToClear() {
     clear.orientation.z = 0.0f;
     clear.orientation.w = 0.0f;
     moveToGoalPose(clear);
-    moveByDelta(0.0f, 0.0f, -0.01f);
-    moveByDelta(0.0f, 0.0f, +0.01f);
+    moveByDelta(0.0f, 0.0f, -0.008f);
+    moveByDelta(0.0f, 0.0f, +0.008f);
 }
 
 // --------------------------------------------------
