@@ -13,9 +13,17 @@ constexpr int BOARD_IMAGE_WIDTH    = 900;
 constexpr float BOARD_ASPECT_RATIO = BOARD_HEIGHT / BOARD_WIDTH;
 } // namespace
 
-ImageProcessor::ImageProcessor(bool debug) : debug_(debug) {
+ImageProcessor::ImageProcessor(rclcpp::Node* node, bool debug) : node_(node), debug_(debug) {
     debug_output_dir_ = "/home/user/ros2_ws/src/piper_tictactoe/board_perception/debug";
     // debug_output_dir_ = "/home/robert/ROS/Final/ros2_ws/src/tictactoe/board_perception/debug";
+
+    if (debug_) {
+        auto qos   = rclcpp::QoS(1).transient_local();
+        pub_board_ = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/board", qos);
+        pub_edges_ = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/edges", qos);
+        pub_cells_ = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/cells", qos);
+        pub_final_ = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/final", qos);
+    }
 }
 
 void ImageProcessor::saveDebug(const string& name, const cv::Mat& img) {
@@ -28,6 +36,39 @@ void ImageProcessor::saveDebug(const string& name, const cv::Mat& img) {
     string filename = debug_output_dir_ + "/" + name + ".png";
     cv::imwrite(filename, img);
     cout << "Saved debug image: " << filename << endl;
+}
+
+void ImageProcessor::publishDebug(rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub, const cv::Mat& img) {
+    if (!debug_ || !pub)
+        return;
+    if (img.empty())
+        return;
+
+    std::string encoding;
+    cv::Mat safe;
+
+    if (img.type() == CV_8UC3) {
+        encoding = "bgr8";
+        safe     = img;
+    } else if (img.type() == CV_8UC1) {
+        encoding = "mono8";
+        safe     = img;
+    } else {
+        RCLCPP_WARN(node_->get_logger(), "Unsupported debug image type=%d. Converting to bgr8.", img.type());
+        cv::cvtColor(img, safe, cv::COLOR_GRAY2BGR);
+        encoding = "bgr8";
+    }
+
+    if (!safe.isContinuous()) {
+        safe = safe.clone();
+    }
+
+    auto msg = cv_bridge::CvImage(std_msgs::msg::Header(), encoding, safe).toImageMsg();
+
+    RCLCPP_INFO(node_->get_logger(), "Publishing debug image: encoding=%s step=%u expected=%u", encoding.c_str(),
+                msg->step, safe.cols * (safe.channels()));
+
+    pub->publish(*msg);
 }
 
 void ImageProcessor::orderPoints(vector<Point2f>& corner_pts) {
@@ -84,7 +125,8 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
     // --------------------------------------------------------
     cvtColor(frame, gray, COLOR_BGR2GRAY);
     saveDebug("frame", frame);
-    inRange(gray, Scalar(80), Scalar(255), mask);
+    // inRange(gray, Scalar(80), Scalar(255), mask);
+    inRange(gray, Scalar(160), Scalar(255), mask);
     saveDebug("mask", mask);
 
     // --------------------------------------------------------
@@ -129,6 +171,7 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
         circle(board_contour, p, 5, Scalar(255, 0, 0), -1);
 
     saveDebug("corner_points", board_contour);
+    publishDebug(pub_board_, board_contour);
 
     // --------------------------------------------------------
     // 4. Perspective transform
@@ -178,6 +221,7 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
     Mat edges;
     Canny(mask, edges, 30, 100);
     saveDebug("edges", edges);
+    publishDebug(pub_edges_, edges);
 
     // --------------------------------------------------------
     // 7. Hough lines for grid lines
@@ -277,6 +321,7 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
         idx++;
     }
     saveDebug("cells", cell_display);
+    publishDebug(pub_cells_, cell_display);
 
     if (cells.size() != 9) {
         cout << "Failed to extract 9 cells!" << endl;
@@ -336,6 +381,7 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
     }
 
     saveDebug("final_detection", board);
+    publishDebug(pub_final_, board);
 
     return true;
 }

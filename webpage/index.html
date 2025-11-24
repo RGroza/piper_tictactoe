@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Robo-Tic-Tac-Toe</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/modern-css-reset/dist/reset.min.css" />
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/roslib/build/roslib.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/eventemitter2@6.4.7/lib/eventemitter2.min.js"></script>
+    <script src="mjpegcanvas.min.js"></script>
+
+    <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+    <div id="app">
+        <div class="layout">
+
+            <!-- Top bar -->
+            <div class="topbar">
+                <div class="topbar-title">Robo-Tic-Tac-Toe</div>
+
+                <div class="topbar-field">
+                    <label>ROS Bridge:</label>
+                    <input type="text" v-model="bridgeUrl" placeholder="ws://localhost:9090">
+                </div>
+
+                <div class="topbar-field">
+                    <label>Web Video Server:</label>
+                    <input type="text" v-model="videoUrl" placeholder="http://localhost:8080">
+                </div>
+
+                <button class="btn" @click="connect" v-if="!connected">Connect</button>
+                <button class="btn" @click="disconnect" v-if="connected">Disconnect</button>
+            </div>
+
+            <!-- Main content -->
+            <div class="main">
+                <div class="grid">
+
+                    <!-- Left column — Tic-Tac-Toe Board -->
+                    <div class="card">
+                        <div class="card-title">Tic-Tac-Toe Board</div>
+
+                        <div class="img-box img-box-3x4 board-container">
+
+                            <!-- Background board image -->
+                            <img src="tictactoe_board.png" class="board-image">
+
+                            <!-- Grid lines -->
+                            <div class="grid-line v1"></div>
+                            <div class="grid-line v2"></div>
+                            <div class="grid-line h1"></div>
+                            <div class="grid-line h2"></div>
+
+                            <!-- 9 clickable cells -->
+                            <div class="cell-btn" v-for="n in 9" :key="n" @click="onBoardClick(n-1)">
+                                {{ n }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Center column — Camera -->
+                    <div class="card">
+                        <div class="card-title">Camera Streaming</div>
+                        <div class="img-box img-box-4x3">
+                            <div id="divCamera" class="mjpeg-wrapper"></div>
+                        </div>
+
+                        <div class="card">
+                            <!-- <div class="card-title" style="margin-top:8px;">Robot Commands</div> -->
+                            <div class="robot-rows">
+                                <div class="robot-row">
+                                    <button class="btn" @click="processBoard">Process Board</button>
+                                    <button class="btn" @click="robotMove">Robot Move</button>
+                                    <button class="btn" @click="robotHome">Robot Home</button>
+
+                                    <div class="symbol-row">
+                                        <label>Player:</label>
+                                        <select v-model="playerSymbol" @change="playerChanged">
+                                            <option value="X">X</option>
+                                            <option value="O">O</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="robot-row">
+                                    <button class="btn" @click="drawGrid">Draw Grid</button>
+                                    <button class="btn" @click="clearBoard">Clear Board</button>
+                                    <button class="btn" @click="robotHome">Robot Home</button>
+
+                                    <div class="symbol-row">
+                                        <label>Robot:</label>
+                                        <select v-model="robotSymbol" @change="robotChanged">
+                                            <option value="X">X</option>
+                                            <option value="O">O</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right column — Image Processing -->
+                    <div class="card">
+                        <div class="card-title">Image Processing</div>
+
+                        <select v-model="selectedDebug" class="debug-select">
+                            <option value="final">Final</option>
+                            <option value="board">Board</option>
+                            <option value="edges">Edges</option>
+                            <option value="cells">Cells</option>
+                        </select>
+
+                        <div class="img-box img-box-3x4">
+                            <div v-show="selectedDebug==='final'" id="debugFinal" class="mjpeg-wrapper"></div>
+                            <div v-show="selectedDebug==='board'" id="debugBoard" class="mjpeg-wrapper"></div>
+                            <div v-show="selectedDebug==='edges'" id="debugEdges" class="mjpeg-wrapper"></div>
+                            <div v-show="selectedDebug==='cells'" id="debugCells" class="mjpeg-wrapper"></div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Bottom bar -->
+            <div class="bottombar">
+                <div class="bottombar-title">About</div>
+                <div class="bottombar-text">
+                    This project combines robotic perception and motion planning to play Tic-Tac-Toe.
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script src="main.js"></script>
+</body>
+
+</html>
