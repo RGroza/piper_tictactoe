@@ -41,7 +41,7 @@ const app = Vue.createApp({
             new MJPEGCANVAS.Viewer({
                 divID: "divCamera",
                 host: this.videoUrl.replace("http://", "").replace("https://", ""),
-                topic: "/image_raw",
+                topic: "/camera/D435/color/image_raw",
                 ssl: false,
                 width: 1280,
                 height: 720,

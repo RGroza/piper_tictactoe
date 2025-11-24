@@ -2,7 +2,7 @@
 
 using std::placeholders::_1;
 
-BoardProcessorServer::BoardProcessorServer() : Node("ttt_board_processor_server"), processor_(true) {
+BoardProcessorServer::BoardProcessorServer() : Node("ttt_board_processor_server"), processor_(this, true) {
     image_sub_ =
         this->create_subscription<sensor_msgs::msg::Image>("/camera/D435/color/image_raw", rclcpp::SensorDataQoS(),
                                                            std::bind(&BoardProcessorServer::imageCallback, this, _1));
