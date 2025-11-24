@@ -121,6 +121,24 @@ const app = Vue.createApp({
             });
         },
 
+        playerMove() {
+            const service = new ROSLIB.Service({
+                ros: this.ros,
+                name: "/play_move",
+                serviceType: "move_manager/srv/PlayMove"
+            });
+
+            const request = new ROSLIB.ServiceRequest({});
+            request.mode = 0;
+            request.symbol = this.playerSymbol;
+
+            console.log("Calling /play_move with symbol:", this.playerSymbol);
+
+            service.callService(request, (result) => {
+                console.log("Service response:", result);
+            });
+        },
+
         drawGrid() {
             const service = new ROSLIB.Service({
                 ros: this.ros,

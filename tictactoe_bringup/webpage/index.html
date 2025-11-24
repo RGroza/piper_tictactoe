@@ -56,7 +56,7 @@
                             <div class="grid-line h2"></div>
 
                             <!-- 9 clickable cells -->
-                            <div class="cell-btn" v-for="n in 9" :key="n" @click="onBoardClick(n-1)">
+                            <div class="cell-btn" v-for="n in 9" :key="n" @click="playerMove(n)">
                                 {{ n }}
                             </div>
                         </div>
