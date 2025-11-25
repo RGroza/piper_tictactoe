@@ -27,10 +27,11 @@ class MoveManager : public rclcpp::Node {
     void handleService(const std::shared_ptr<move_manager::srv::PlayMove::Request> request,
                        std::shared_ptr<move_manager::srv::PlayMove::Response> response) {
         RCLCPP_INFO(get_logger(), "Move request received (mode=%d)", request->mode);
-        // Request current board state
+        // Request current board state from perception service
         auto board_future = board_processor_client_->async_send_request(
             std::make_shared<board_perception::srv::ProcessBoard::Request>());
 
+        // Check for timeout or failure in board perception
         if (board_future.wait_for(2s) != std::future_status::ready) {
             RCLCPP_ERROR(get_logger(), "process_board timed out");
             serviceFailure(response, "Board processing did not respond");
@@ -44,13 +45,28 @@ class MoveManager : public rclcpp::Node {
             return;
         }
 
-        // Print board state
+        // Print and validate the current board state
         RCLCPP_INFO(get_logger(), "Current board state:");
-        printBoard(board_response->board);
+        vector<vector<int>> board_grid = flatBoardToGrid(board_response->board);
+        printBoard(board_grid);
+
+        // Validate board state
+        if (isBoardFull(board_grid)) {
+            serviceFailure(response, "Board is already full");
+            return;
+        }
+        if (!isBoardValid(board_response->board, request->symbol)) {
+            serviceFailure(response, "Current board state is invalid for the given symbol");
+            return;
+        }
+        if (checkWinner(board_grid) != -1) {
+            serviceFailure(response, "Game is already over");
+            return;
+        }
 
         int cell;
         if (request->mode == 0) {
-            // Check human move is valid
+            // Handle human move: validate cell number and occupancy
             if (request->cell_number < 1 || request->cell_number > 9) {
                 serviceFailure(response, "Invalid human move: cell number out of range");
                 return;
@@ -62,16 +78,16 @@ class MoveManager : public rclcpp::Node {
             cell = request->cell_number;
             RCLCPP_INFO(get_logger(), "Human move on cell %d", cell);
         } else {
-            // Compute best robot move
-            cell = this->bestMove(board_response->board, request->symbol) + 1;
-            if (cell == 0) {
-                serviceFailure(response, "Board is already full");
+            // Handle robot move: compute best move using minimax
+            cell = this->bestMove(board_grid, request->symbol) + 1;
+            if (cell < 1 || cell > 9) {
+                serviceFailure(response, "Robot best move not found");
                 return;
             }
             RCLCPP_INFO(this->get_logger(), "Robot best move on cell %d", cell);
         }
 
-        // Execute trajectory
+        // Prepare and send trajectory execution request
         auto trajectory_request         = std::make_shared<piper_trajectory::srv::ExecuteTrajectory::Request>();
         trajectory_request->type        = request->symbol;
         trajectory_request->cell_number = cell;
@@ -79,13 +95,16 @@ class MoveManager : public rclcpp::Node {
 
         auto trajectory_future = trajectory_client_->async_send_request(trajectory_request);
 
-        // Print board state after move
-        for (int i = 0; i < 9; i++)
-            response->board[i] = board_response->board[i];
-        response->board[cell - 1] = request->symbol;
+        // Update board_grid with the new move
+        board_grid[(cell - 1) / 3][(cell - 1) % 3] = request->symbol;
         RCLCPP_INFO(get_logger(), "Board state after requested move:");
-        printBoard(response->board);
+        printBoard(board_grid);
 
+        // Flatten board_grid back into response->board
+        for (int i = 0; i < 9; i++)
+            response->board[i] = board_grid[i / 3][i % 3];
+
+        // Wait for trajectory execution and handle timeout/failure
         if (trajectory_future.wait_for(30s) != std::future_status::ready) {
             serviceFailure(response, "Trajectory execution timeout out");
             return;
@@ -98,6 +117,7 @@ class MoveManager : public rclcpp::Node {
             return;
         }
 
+        // Set success message and response
         response->message = "Move executed successfully";
         RCLCPP_INFO(get_logger(), response->message.c_str());
         response->success = true;
@@ -114,12 +134,29 @@ class MoveManager : public rclcpp::Node {
     // Tic-Tac-Toe Minimax Logic
     // -------------------------
 
-    int bestMove(array<int, 9> flat_board, int robot_symbol) {
-        // Convert 1D array → 3×3 grid
+    vector<vector<int>> flatBoardToGrid(array<int, 9> flat_board) {
         vector<vector<int>> board(3, vector<int>(3, -1));
         for (int i = 0; i < 9; i++)
             board[i / 3][i % 3] = flat_board[i];
+        return board;
+    }
 
+    bool isBoardValid(array<int, 9> flat_board, int my_symbol) {
+        int other_symbol       = my_symbol == 0 ? 1 : 0;
+        int my_symbol_count    = 0;
+        int other_symbol_count = 0;
+
+        for (int i = 0; i < 9; i++) {
+            if (flat_board[i] == my_symbol)
+                my_symbol_count++;
+            else if (flat_board[i] == other_symbol)
+                other_symbol_count++;
+        }
+
+        return (my_symbol_count == other_symbol_count) || (my_symbol_count == other_symbol_count + 1);
+    }
+
+    int bestMove(vector<vector<int>> board, int robot_symbol) {
         int best_score = numeric_limits<int>::lowest();
         int best_cell  = -1;
 
@@ -226,21 +263,24 @@ class MoveManager : public rclcpp::Node {
         }
     }
 
-    void printBoard(array<int, 9> board) {
-        for (int i = 0; i < 9; i++) {
-            char symbol;
-            if (board[i] == -1)
-                symbol = '.';
-            else if (board[i] == 0)
-                symbol = 'O';
-            else
-                symbol = 'X';
+    void printBoard(const vector<vector<int>>& board) {
+        for (int i = 0; i < 3; ++i) {
+            for (int j = 0; j < 3; ++j) {
+                char symbol;
+                if (board[i][j] == -1)
+                    symbol = '.';
+                else if (board[i][j] == 0)
+                    symbol = 'O';
+                else
+                    symbol = 'X';
 
-            cout << symbol << " ";
-            if ((i + 1) % 3 == 0)
-                cout << endl;
-            else
-                cout << "| ";
+                cout << symbol;
+                if (j < 2)
+                    cout << " | ";
+            }
+            cout << endl;
+            if (i < 2)
+                cout << "--+---+--" << endl;
         }
     }
 

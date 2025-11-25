@@ -2,12 +2,14 @@ const app = Vue.createApp({
     data() {
         return {
             ros: null,
-            bridgeUrl: "",
-            videoHost: "",
+            bridgeUrl: "ws://localhost:9090",
+            videoHost: "localhost:8080",
             connected: false,
             selectedDebug: "final",
             playerSymbol: "X",
             robotSymbol: "O",
+            board: Array(9).fill(null),
+            gridDetected: false,
         };
     },
 
@@ -39,10 +41,6 @@ const app = Vue.createApp({
             this.ros.on("connection", () => {
                 console.log("Connected to ROS!");
                 this.connected = true;
-
-                let clean = this.bridgeUrl.split('wss://')[1]
-                let domain = clean.split('/')[0] + '/' + clean.split('/')[1]
-                this.videoHost = domain + '/cameras'
 
                 this.startCameraStream();
                 this.startDebugStreams();
@@ -121,10 +119,24 @@ const app = Vue.createApp({
 
             service.callService(request, (result) => {
                 console.log("Service response:", result);
+                if (result && result.success) {
+                    this.gridDetected = true;
+                    for (let i = 0; i < 9; i++) {
+                        if (result.board[i] === 0) {
+                            this.board[i] = "O";
+                        } else if (result.board[i] === 1) {
+                            this.board[i] = "X";
+                        } else {
+                            this.board[i] = null;
+                        }
+                    }
+                }
             });
         },
 
         moveRequest(mode, symbol, cell_number) {
+            if (this.board[cell_number - 1] !== null && mode === 0) return;
+
             const service = new ROSLIB.Service({
                 ros: this.ros,
                 name: "/play_move",
@@ -145,6 +157,9 @@ const app = Vue.createApp({
 
             service.callService(request, (result) => {
                 console.log("Service response:", result);
+                if (mode === 0 && result && result.success) {
+                    this.board[cell_number - 1] = symbol;
+                }
             });
         },
 
@@ -190,6 +205,8 @@ const app = Vue.createApp({
             service.callService(request, (result) => {
                 console.log("Service response:", result);
             });
+
+            this.board = Array(9).fill(null);
         },
 
         playerChanged() {

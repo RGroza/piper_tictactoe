@@ -27,11 +27,6 @@
                     <input type="text" v-model="bridgeUrl" placeholder="ws://localhost:9090">
                 </div>
 
-                <!-- <div class="topbar-field">
-                    <label>Web Video Server:</label>
-                    <input type="text" v-model="videoUrl" placeholder="http://localhost:8080">
-                </div> -->
-
                 <button class="btn" @click="connect" v-if="!connected">Connect</button>
                 <button class="btn" @click="disconnect" v-if="connected">Disconnect</button>
             </div>
@@ -49,16 +44,36 @@
                             <!-- Background board image -->
                             <img src="tictactoe_board.png" class="board-image">
 
-                            <!-- Grid lines -->
-                            <div class="grid-line v1"></div>
-                            <div class="grid-line v2"></div>
-                            <div class="grid-line h1"></div>
-                            <div class="grid-line h2"></div>
+                            <template v-if="gridDetected">
+                                <!-- Grid lines -->
+                                <div class="grid-line v1"></div>
+                                <div class="grid-line v2"></div>
+                                <div class="grid-line h1"></div>
+                                <div class="grid-line h2"></div>
 
-                            <!-- 9 clickable cells -->
-                            <div class="cell-btn" v-for="n in 9" :key="n" @click="playerMove(n)">
-                                {{ n }}
-                            </div>
+                                <!-- 9 clickable cells -->
+                                <div v-for="n in 9" :key="n" class="cell-btn" :class="{ played: board[n-1] !== null }"
+                                    @click="board[n-1] === null && playerMove(n)"
+                                    style="cursor: pointer; user-select: none;">
+                                    <span v-if="board[n-1]" class="cell-symbol">
+                                        <template v-if="board[n-1] === 'X'">
+                                            <svg viewBox="0 0 100 100" class="cell-svg">
+                                                <line x1="20" y1="20" x2="80" y2="80" stroke="#00e0ff" stroke-width="10"
+                                                    stroke-linecap="round" />
+                                                <line x1="80" y1="20" x2="20" y2="80" stroke="#00e0ff" stroke-width="10"
+                                                    stroke-linecap="round" />
+                                            </svg>
+                                        </template>
+                                        <template v-else-if="board[n-1] === 'O'">
+                                            <svg viewBox="0 0 100 100" class="cell-svg">
+                                                <circle cx="50" cy="50" r="35" stroke="#00e0ff" stroke-width="10"
+                                                    fill="none" />
+                                            </svg>
+                                        </template>
+                                    </span>
+                                    <span v-else>{{ n }}</span>
+                                </div>
+                            </template>
                         </div>
                     </div>
 

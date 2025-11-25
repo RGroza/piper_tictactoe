@@ -209,12 +209,49 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: background 0.2s, border 0.2s;
+    z-index: 1;
 }
 
 .cell-btn:hover {
     background: rgba(255, 0, 0, 0.10);
     border-color: rgba(255, 0, 0, 0.30);
     cursor: pointer;
+}
+
+.cell-btn.played {
+    background: transparent !important;
+    border: none !important;
+    pointer-events: none;
+    cursor: default;
+}
+
+.cell-symbol {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    z-index: 2;
+    /* Remove font-weight and font-size for SVG */
+}
+
+.cell-svg {
+    width: 80%;
+    height: 80%;
+    display: block;
+}
+
+.cell-btn.played .cell-symbol {
+    color: #00e0ff;
+    opacity: 1;
+}
+
+.cell-btn.played:hover {
+    background: transparent;
+    border: none;
+    cursor: default;
 }
 
 /* Top row */
