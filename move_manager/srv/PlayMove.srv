@@ -7,3 +7,5 @@ int32 cell_number  # human move; ignored if robot move
 bool success
 string message
 int32[9] board     # updated board after processing
+bool game_over     # gave over, winner detected
+int32[3] winner    # {symbol, cell 1, cell 2}

@@ -10,6 +10,7 @@ const app = Vue.createApp({
             robotSymbol: "O",
             board: Array(9).fill(null),
             gridDetected: false,
+            winLine: null, // {from: idx1, to: idx2}
         };
     },
 
@@ -159,8 +160,18 @@ const app = Vue.createApp({
                 console.log("Service response:", result);
                 if (mode === 0 && result && result.success) {
                     this.board[cell_number - 1] = symbol;
+                    // Call processBoard twice to update detection images
+                    this.processBoard();
+                    this.processBoard();
+                    // Check if game is over
+                    if (result.game_over) {
+                        let cell1 = result.winner[1];
+                        let cell2 = result.winner[2];
+                        this.winLine = { from: cell1, to: cell2 };
+                    }
                 }
             });
+
         },
 
         playerMove(cell_number) {
@@ -207,6 +218,7 @@ const app = Vue.createApp({
             });
 
             this.board = Array(9).fill(null);
+            this.winLine = null;
         },
 
         playerChanged() {
@@ -215,7 +227,19 @@ const app = Vue.createApp({
 
         robotChanged() {
             this.playerSymbol = this.robotSymbol === "X" ? "O" : "X";
-        }
+        },
+
+        getCellCenter(idx) {
+            // idx: 0-8, left-to-right, top-to-bottom
+            const col = idx % 3;
+            const row = Math.floor(idx / 3);
+            const cellW = 300 / 3;
+            const cellH = 400 / 3;
+            return {
+                x: col * cellW + cellW / 2,
+                y: row * cellH + cellH / 2
+            };
+        },
     }
 });
 

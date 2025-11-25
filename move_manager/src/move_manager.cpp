@@ -45,21 +45,24 @@ class MoveManager : public rclcpp::Node {
             return;
         }
 
-        // Print and validate the current board state
+        // Convert float board into grid
+        vector<vector<int>> board(3, vector<int>(3, -1));
+        for (int i = 0; i < 9; i++)
+            board[i / 3][i % 3] = board_response->board[i];
+
         RCLCPP_INFO(get_logger(), "Current board state:");
-        vector<vector<int>> board_grid = flatBoardToGrid(board_response->board);
-        printBoard(board_grid);
+        printBoard(board);
 
         // Validate board state
-        if (isBoardFull(board_grid)) {
+        if (isBoardFull(board)) {
             serviceFailure(response, "Board is already full");
             return;
         }
-        if (!isBoardValid(board_response->board, request->symbol)) {
+        if (!isBoardValid(board, request->symbol)) {
             serviceFailure(response, "Current board state is invalid for the given symbol");
             return;
         }
-        if (checkWinner(board_grid) != -1) {
+        if (checkWinner(board).first != -1) {
             serviceFailure(response, "Game is already over");
             return;
         }
@@ -79,7 +82,7 @@ class MoveManager : public rclcpp::Node {
             RCLCPP_INFO(get_logger(), "Human move on cell %d", cell);
         } else {
             // Handle robot move: compute best move using minimax
-            cell = this->bestMove(board_grid, request->symbol) + 1;
+            cell = this->bestMove(board, request->symbol) + 1;
             if (cell < 1 || cell > 9) {
                 serviceFailure(response, "Robot best move not found");
                 return;
@@ -95,14 +98,25 @@ class MoveManager : public rclcpp::Node {
 
         auto trajectory_future = trajectory_client_->async_send_request(trajectory_request);
 
-        // Update board_grid with the new move
-        board_grid[(cell - 1) / 3][(cell - 1) % 3] = request->symbol;
+        // Update board with the new move
+        board[(cell - 1) / 3][(cell - 1) % 3] = request->symbol;
         RCLCPP_INFO(get_logger(), "Board state after requested move:");
-        printBoard(board_grid);
+        printBoard(board);
 
-        // Flatten board_grid back into response->board
+        // Check for winner
+        pair<int, pair<int, int>> winner = checkWinner(board);
+        if (winner.first != -1) {
+            response->game_over = true;
+            response->winner[0] = winner.first;
+            response->winner[1] = winner.second.first;
+            response->winner[2] = winner.second.second;
+        } else {
+            response->game_over = false;
+        }
+
+        // Flatten board back into response->board
         for (int i = 0; i < 9; i++)
-            response->board[i] = board_grid[i / 3][i % 3];
+            response->board[i] = board[i / 3][i % 3];
 
         // Wait for trajectory execution and handle timeout/failure
         if (trajectory_future.wait_for(30s) != std::future_status::ready) {
@@ -133,28 +147,6 @@ class MoveManager : public rclcpp::Node {
     // -------------------------
     // Tic-Tac-Toe Minimax Logic
     // -------------------------
-
-    vector<vector<int>> flatBoardToGrid(array<int, 9> flat_board) {
-        vector<vector<int>> board(3, vector<int>(3, -1));
-        for (int i = 0; i < 9; i++)
-            board[i / 3][i % 3] = flat_board[i];
-        return board;
-    }
-
-    bool isBoardValid(array<int, 9> flat_board, int my_symbol) {
-        int other_symbol       = my_symbol == 0 ? 1 : 0;
-        int my_symbol_count    = 0;
-        int other_symbol_count = 0;
-
-        for (int i = 0; i < 9; i++) {
-            if (flat_board[i] == my_symbol)
-                my_symbol_count++;
-            else if (flat_board[i] == other_symbol)
-                other_symbol_count++;
-        }
-
-        return (my_symbol_count == other_symbol_count) || (my_symbol_count == other_symbol_count + 1);
-    }
 
     int bestMove(vector<vector<int>> board, int robot_symbol) {
         int best_score = numeric_limits<int>::lowest();
@@ -191,38 +183,8 @@ class MoveManager : public rclcpp::Node {
         return best_cell;
     }
 
-    int checkWinner(const vector<vector<int>>& b) {
-        // Rows
-        for (int i = 0; i < 3; i++)
-            if (b[i][0] != -1 && b[i][0] == b[i][1] && b[i][1] == b[i][2])
-                return b[i][0];
-
-        // Columns
-        for (int j = 0; j < 3; j++)
-            if (b[0][j] != -1 && b[0][j] == b[1][j] && b[1][j] == b[2][j])
-                return b[0][j];
-
-        // Diagonal (\)
-        if (b[0][0] != -1 && b[0][0] == b[1][1] && b[1][1] == b[2][2])
-            return b[0][0];
-
-        // Diagonal (/)
-        if (b[0][2] != -1 && b[0][2] == b[1][1] && b[1][1] == b[2][0])
-            return b[0][2];
-
-        return -1; // no winner
-    }
-
-    bool isBoardFull(const vector<vector<int>>& b) {
-        for (const auto& row : b)
-            for (int c : row)
-                if (c == -1)
-                    return false;
-        return true;
-    }
-
     int minimax(vector<vector<int>>& b, int depth, bool is_maximizing, int robot_symbol) {
-        int winner       = checkWinner(b);
+        int winner       = checkWinner(b).first;
         int human_symbol = (robot_symbol == 0 ? 1 : 0);
 
         // Depth-aware scoring
@@ -265,6 +227,50 @@ class MoveManager : public rclcpp::Node {
 
             return best_score;
         }
+    }
+
+    pair<int, pair<int, int>> checkWinner(const vector<vector<int>>& b) {
+        // Rows
+        for (int i = 0; i < 3; i++)
+            if (b[i][0] != -1 && b[i][0] == b[i][1] && b[i][1] == b[i][2])
+                return {b[i][0], {3 * i, 3 * i + 2}};
+
+        // Columns
+        for (int j = 0; j < 3; j++)
+            if (b[0][j] != -1 && b[0][j] == b[1][j] && b[1][j] == b[2][j])
+                return {b[0][j], {j, 6 + j}};
+
+        // Diagonal (\)
+        if (b[0][0] != -1 && b[0][0] == b[1][1] && b[1][1] == b[2][2])
+            return {b[0][0], {0, 8}};
+        // Diagonal (/)
+        if (b[0][2] != -1 && b[0][2] == b[1][1] && b[1][1] == b[2][0])
+            return {b[0][2], {2, 6}};
+
+        return {-1, {-1, -1}}; // no winner
+    }
+
+    bool isBoardFull(const vector<vector<int>>& board) {
+        for (const auto& row : board)
+            for (int c : row)
+                if (c == -1)
+                    return false;
+        return true;
+    }
+
+    bool isBoardValid(const vector<vector<int>>& board, int my_symbol) {
+        int other_symbol       = my_symbol == 0 ? 1 : 0;
+        int my_symbol_count    = 0;
+        int other_symbol_count = 0;
+
+        for (int i = 0; i < 3; i++)
+            for (int j = 0; j < 3; j++)
+                if (board[i][j] == my_symbol)
+                    my_symbol_count++;
+                else if (board[i][j] == other_symbol)
+                    other_symbol_count++;
+
+        return (my_symbol_count == other_symbol_count) || (my_symbol_count == other_symbol_count - 1);
     }
 
     void printBoard(const vector<vector<int>>& board) {
