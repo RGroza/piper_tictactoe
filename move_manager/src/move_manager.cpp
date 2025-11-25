@@ -160,26 +160,30 @@ class MoveManager : public rclcpp::Node {
         int best_score = numeric_limits<int>::lowest();
         int best_cell  = -1;
 
+        // Check if the board is empty
         bool empty = true;
-        for (int i = 0; i < 9; i++)
-            if (flat_board[i] > -1)
-                empty = false;
+        for (int i = 0; i < 3 && empty; ++i)
+            for (int j = 0; j < 3 && empty; ++j)
+                if (board[i][j] > -1)
+                    empty = false;
 
         if (empty)
             return 4; // return middle cell if empty
 
         // Try all free cells
-        for (int i = 0; i < 9; i++) {
-            if (flat_board[i] == -1) {
-                board[i / 3][i % 3] = robot_symbol;
+        for (int i = 0; i < 3; ++i) {
+            for (int j = 0; j < 3; ++j) {
+                if (board[i][j] == -1) {
+                    board[i][j] = robot_symbol;
 
-                int score = minimax(board, 0, false, robot_symbol);
+                    int score = minimax(board, 0, false, robot_symbol);
 
-                board[i / 3][i % 3] = -1; // undo move
+                    board[i][j] = -1; // undo move
 
-                if (score > best_score) {
-                    best_score = score;
-                    best_cell  = i; // return cell number
+                    if (score > best_score) {
+                        best_score = score;
+                        best_cell  = 3 * i + j; // return cell number
+                    }
                 }
             }
         }
