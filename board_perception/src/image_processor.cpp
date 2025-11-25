@@ -15,7 +15,6 @@ constexpr float BOARD_ASPECT_RATIO = BOARD_HEIGHT / BOARD_WIDTH;
 
 ImageProcessor::ImageProcessor(rclcpp::Node* node, bool debug) : node_(node), debug_(debug) {
     debug_output_dir_ = "/home/user/ros2_ws/src/piper_tictactoe/board_perception/debug";
-    // debug_output_dir_ = "/home/robert/ROS/Final/ros2_ws/src/tictactoe/board_perception/debug";
 
     if (debug_) {
         auto qos   = rclcpp::QoS(1).transient_local();
@@ -125,8 +124,7 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
     // --------------------------------------------------------
     cvtColor(frame, gray, COLOR_BGR2GRAY);
     saveDebug("frame", frame);
-    // inRange(gray, Scalar(80), Scalar(255), mask);
-    inRange(gray, Scalar(160), Scalar(255), mask);
+    inRange(gray, Scalar(80), Scalar(255), mask);
     saveDebug("mask", mask);
 
     // --------------------------------------------------------

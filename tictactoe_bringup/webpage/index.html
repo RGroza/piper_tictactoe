@@ -27,10 +27,10 @@
                     <input type="text" v-model="bridgeUrl" placeholder="ws://localhost:9090">
                 </div>
 
-                <div class="topbar-field">
+                <!-- <div class="topbar-field">
                     <label>Web Video Server:</label>
                     <input type="text" v-model="videoUrl" placeholder="http://localhost:8080">
-                </div>
+                </div> -->
 
                 <button class="btn" @click="connect" v-if="!connected">Connect</button>
                 <button class="btn" @click="disconnect" v-if="connected">Disconnect</button>

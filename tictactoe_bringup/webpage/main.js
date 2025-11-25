@@ -2,8 +2,8 @@ const app = Vue.createApp({
     data() {
         return {
             ros: null,
-            bridgeUrl: "ws://localhost:9090",
-            videoUrl: "http://localhost:8080",
+            bridgeUrl: "",
+            videoHost: "",
             connected: false,
             selectedDebug: "final",
             playerSymbol: "X",
@@ -11,7 +11,24 @@ const app = Vue.createApp({
         };
     },
 
+    created() {
+        this.discoverUrls();
+        this.connect();
+    },
+
     methods: {
+        discoverUrls() {
+            const host = window.location.hostname;
+            const pathParts = window.location.pathname.split("/").filter(x => x.length > 0);
+            const session = pathParts[0];
+
+            this.bridgeUrl = `wss://${host}/${session}/rosbridge/`;
+            this.videoHost = `${host}/${session}/cameras`;
+
+            console.log("Auto-resolved ROSBridge:", this.bridgeUrl);
+            console.log("Auto-resolved video host:", this.videoHost);
+        },
+
         connect() {
             console.log("Connecting to ROSBridge:", this.bridgeUrl);
 
@@ -22,6 +39,10 @@ const app = Vue.createApp({
             this.ros.on("connection", () => {
                 console.log("Connected to ROS!");
                 this.connected = true;
+
+                let clean = this.bridgeUrl.split('wss://')[1]
+                let domain = clean.split('/')[0] + '/' + clean.split('/')[1]
+                this.videoHost = domain + '/cameras'
 
                 this.startCameraStream();
                 this.startDebugStreams();
@@ -40,7 +61,7 @@ const app = Vue.createApp({
         startCameraStream() {
             new MJPEGCANVAS.Viewer({
                 divID: "divCamera",
-                host: this.videoUrl.replace("http://", "").replace("https://", ""),
+                host: this.videoHost,
                 topic: "/camera/D435/color/image_raw",
                 ssl: false,
                 width: 1280,
@@ -53,7 +74,7 @@ const app = Vue.createApp({
 
             new MJPEGCANVAS.Viewer({
                 divID: "debugBoard",
-                host: "localhost:8080",
+                host: this.videoHost,
                 topic: "/board_processor/board",
                 ssl: false,
                 width: 424,
@@ -62,7 +83,7 @@ const app = Vue.createApp({
 
             new MJPEGCANVAS.Viewer({
                 divID: "debugEdges",
-                host: "localhost:8080",
+                host: this.videoHost,
                 topic: "/board_processor/edges",
                 ssl: false,
                 width: 810,
@@ -71,7 +92,7 @@ const app = Vue.createApp({
 
             new MJPEGCANVAS.Viewer({
                 divID: "debugCells",
-                host: "localhost:8080",
+                host: this.videoHost,
                 topic: "/board_processor/cells",
                 ssl: false,
                 width: 810,
@@ -80,7 +101,7 @@ const app = Vue.createApp({
 
             new MJPEGCANVAS.Viewer({
                 divID: "debugFinal",
-                host: "localhost:8080",
+                host: this.videoHost,
                 topic: "/board_processor/final",
                 ssl: false,
                 width: 810,
@@ -103,7 +124,7 @@ const app = Vue.createApp({
             });
         },
 
-        robotMove() {
+        moveRequest(mode, symbol, cell_number) {
             const service = new ROSLIB.Service({
                 ros: this.ros,
                 name: "/play_move",
@@ -111,32 +132,28 @@ const app = Vue.createApp({
             });
 
             const request = new ROSLIB.ServiceRequest({});
-            request.mode = 1;
-            request.symbol = this.robotSymbol;
+            request.mode = mode;
+            request.cell_number = cell_number;
 
-            console.log("Calling /play_move with symbol:", this.robotSymbol);
+            if (symbol === "O") {
+                request.symbol = 0;
+            } else {
+                request.symbol = 1;
+            }
+
+            console.log("Calling /play_move with symbol:", symbol);
 
             service.callService(request, (result) => {
                 console.log("Service response:", result);
             });
         },
 
-        playerMove() {
-            const service = new ROSLIB.Service({
-                ros: this.ros,
-                name: "/play_move",
-                serviceType: "move_manager/srv/PlayMove"
-            });
+        playerMove(cell_number) {
+            this.moveRequest(0, this.playerSymbol, cell_number);
+        },
 
-            const request = new ROSLIB.ServiceRequest({});
-            request.mode = 0;
-            request.symbol = this.playerSymbol;
-
-            console.log("Calling /play_move with symbol:", this.playerSymbol);
-
-            service.callService(request, (result) => {
-                console.log("Service response:", result);
-            });
+        robotMove() {
+            this.moveRequest(1, this.robotSymbol, 0);
         },
 
         drawGrid() {
