@@ -39,6 +39,12 @@ void TrajectoryServer::handleService(const std::shared_ptr<piper_trajectory::srv
             trajectory_executor_.moveToHome();
             response->success = true;
             return;
+        case 6:
+            RCLCPP_INFO(this->get_logger(), "Drawing contour -- received %zu points, image dimensions: %dx%d",
+                        request->contour_points.size() / 2, request->image_dimensions[0], request->image_dimensions[1]);
+            trajectory_executor_.drawContour(request->image_dimensions, request->contour_points);
+            response->success = true;
+            return;
         default:
             RCLCPP_WARN(this->get_logger(), "Invalid type %d received", request->type);
             response->success = false;

@@ -24,12 +24,14 @@ class TrajectoryExecutor {
 
     explicit TrajectoryExecutor(rclcpp::Node::SharedPtr base_node);
 
+    Pose makePose(double x, double y, double z);
     void loadWaypoints();
     void drawFullBoard();
     void drawLine(const Pose& start, float dx, float dy);
     void drawGrid();
     void drawCross(int cell_number);
     void drawCircle(int cell_number);
+    void drawContour(const std::vector<int>& image_dimensions, const std::vector<int>& contour_points);
     void moveToHome();
     void moveToClear();
 
@@ -49,6 +51,8 @@ class TrajectoryExecutor {
     std::vector<Pose> cartesian_waypoints_;
     RobotTrajectory cartesian_trajectory_plan_;
     std::vector<Pose> waypoints_;
+    Pose board_center_;
+    Pose board_image_corner_;
 
     const double end_effector_step_ = 0.005;
     const double jump_threshold_    = 0.0;

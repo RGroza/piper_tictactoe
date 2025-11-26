@@ -11,6 +11,7 @@ static const rclcpp::Logger LOGGER            = rclcpp::get_logger("ttt_trajecto
 static const std::string PLANNING_GROUP_ROBOT = "arm";
 
 using namespace std::chrono_literals;
+using Pose = geometry_msgs::msg::Pose;
 
 namespace {
 constexpr float HOVERING_Z    = 0.204f;
@@ -20,6 +21,8 @@ constexpr float CROSS_WIDTH   = 0.025f;
 constexpr float CIRCLE_RADIUS = 0.015f;
 constexpr float GRID_X_OFFSET = 0.027f;
 constexpr float GRID_Y_OFFSET = -0.02f;
+constexpr float BOARD_WIDTH   = 0.100f;
+constexpr float BOARD_HEIGHT  = 0.100f;
 } // namespace
 
 TrajectoryExecutor::TrajectoryExecutor(rclcpp::Node::SharedPtr base_node) : base_node_(std::move(base_node)) {
@@ -59,19 +62,19 @@ TrajectoryExecutor::TrajectoryExecutor(rclcpp::Node::SharedPtr base_node) : base
 // Waypoints: 3x3 tic-tac-toe grid
 // --------------------------------------------------
 
-void TrajectoryExecutor::loadWaypoints() {
-    auto makePose = [&](double x, double y, double z) {
-        Pose pose;
-        pose.position.x    = x;
-        pose.position.y    = y;
-        pose.position.z    = z;
-        pose.orientation.x = 0.0f;
-        pose.orientation.y = 1.0f;
-        pose.orientation.z = 0.0f;
-        pose.orientation.w = 0.0f;
-        return pose;
-    };
+Pose TrajectoryExecutor::makePose(double x, double y, double z) {
+    Pose pose;
+    pose.position.x    = x;
+    pose.position.y    = y;
+    pose.position.z    = z;
+    pose.orientation.x = 0.0f;
+    pose.orientation.y = 1.0f;
+    pose.orientation.z = 0.0f;
+    pose.orientation.w = 0.0f;
+    return pose;
+};
 
+void TrajectoryExecutor::loadWaypoints() {
     waypoints_.clear();
     waypoints_.reserve(9);
 
@@ -84,6 +87,9 @@ void TrajectoryExecutor::loadWaypoints() {
     waypoints_.push_back(makePose(0.245f + GRID_X_OFFSET, 0.065f + GRID_Y_OFFSET, HOVERING_Z));
     waypoints_.push_back(makePose(0.200f + GRID_X_OFFSET, 0.065f + GRID_Y_OFFSET, HOVERING_Z));
     waypoints_.push_back(makePose(0.155f + GRID_X_OFFSET, 0.065f + GRID_Y_OFFSET, HOVERING_Z));
+
+    board_center_       = makePose(0.200f, 0.020f, HOVERING_Z);
+    board_image_corner_ = makePose(0.200f - (BOARD_WIDTH / 2.0f), 0.020f - (BOARD_HEIGHT / 2.0f), HOVERING_Z);
 }
 
 // --------------------------------------------------
@@ -175,6 +181,53 @@ void TrajectoryExecutor::drawCircle(int cell_number) {
 
     if (fraction < 0.9) {
         RCLCPP_WARN(LOGGER, "Circle trajectory planning failed (%.1f%%)", fraction * 100.0);
+        return;
+    }
+
+    move_group_robot_->execute(traj);
+    moveByDelta(0, 0, DRAW_Z_OFFSET);
+}
+
+void TrajectoryExecutor::drawContour(const std::vector<int>& image_dimensions, const std::vector<int>& contour_points) {
+    float image_aspect_ratio = static_cast<float>(image_dimensions[0]) / static_cast<float>(image_dimensions[1]);
+    float board_aspect_ratio = BOARD_WIDTH / BOARD_HEIGHT;
+    float scale_width, scale_height;
+
+    if (image_aspect_ratio > board_aspect_ratio) {
+        scale_width  = BOARD_WIDTH / static_cast<float>(image_dimensions[0]);
+        scale_height = (BOARD_WIDTH / image_aspect_ratio) / static_cast<float>(image_dimensions[1]);
+    } else {
+        scale_width  = (BOARD_HEIGHT * image_aspect_ratio) / static_cast<float>(image_dimensions[0]);
+        scale_height = BOARD_HEIGHT / static_cast<float>(image_dimensions[1]);
+    }
+    // RCLCPP_INFO(LOGGER, "Scaling factors - Width: %.3f, Height: %.3f", scale_width, scale_height);
+
+    std::vector<Pose> contour_waypoints;
+    for (size_t i = 0; i < contour_points.size(); i += 2) {
+        // RCLCPP_INFO(LOGGER, "Processing contour point %zu/%zu, (%d, %d)", i / 2 + 1, contour_points.size() / 2,
+        //             contour_points[i], contour_points[i + 1]);
+        float x = board_image_corner_.position.x + (contour_points[i] * scale_width);
+        float y = board_image_corner_.position.y + (contour_points[i + 1] * scale_height);
+        float z = HOVERING_Z - DRAW_Z_OFFSET;
+
+        if (x < board_image_corner_.position.x || x > board_image_corner_.position.x + BOARD_WIDTH ||
+            y < board_image_corner_.position.y || y > board_image_corner_.position.y + BOARD_HEIGHT) {
+            RCLCPP_WARN(LOGGER, "Contour point %zu (%.3f, %.3f) is out of board bounds!", i / 2, x, y);
+            return;
+        }
+
+        contour_waypoints.push_back(makePose(x, y, z));
+        // RCLCPP_INFO(LOGGER, "Contour point %zu: (%.3f, %.3f, %.3f)", i / 2, x, y, z);
+    }
+
+    moveToGoalPose(contour_waypoints.front());
+
+    RobotTrajectory traj;
+    double fraction =
+        move_group_robot_->computeCartesianPath(contour_waypoints, end_effector_step_, jump_threshold_, traj);
+
+    if (fraction < 0.9) {
+        RCLCPP_WARN(LOGGER, "Contour trajectory planning failed (%.1f%%)", fraction * 100.0);
         return;
     }
 

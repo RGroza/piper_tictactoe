@@ -1,6 +1,8 @@
 int32 type
 int32 cell_number
 bool return_home
+int32[] image_dimensions
+int32[] contour_points
 
 ---
 
