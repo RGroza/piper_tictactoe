@@ -94,48 +94,52 @@
 
                         <div class="card">
                             <!-- <div class="card-title" style="margin-top:8px;">Robot Commands</div> -->
-                            <div class="robot-rows">
-                                <div class="robot-row">
-                                    <button class="btn" @click="processBoard">Process Board</button>
-                                    <button class="btn" @click="robotMove">Robot Move</button>
-                                    <button class="btn" @click="robotHome">Robot Home</button>
-
+                            <div class="controls-row">
+                                <div class="symbol-col">
                                     <div class="symbol-row">
                                         <label>Player:</label>
-                                        <select v-model="playerSymbol" @change="playerChanged">
+                                        <select v-model="playerSymbol" @change="playerChanged" :disabled="gameStarted">
                                             <option value="X">X</option>
                                             <option value="O">O</option>
                                         </select>
                                     </div>
-                                </div>
-
-                                <div class="robot-row">
-                                    <button class="btn" @click="drawGrid">Draw Grid</button>
-                                    <button class="btn" @click="clearBoard">Clear Board</button>
-                                    <button class="btn" @click="robotHome">Robot Home</button>
-
                                     <div class="symbol-row">
                                         <label>Robot:</label>
-                                        <select v-model="robotSymbol" @change="robotChanged">
+                                        <select v-model="robotSymbol" @change="robotChanged" :disabled="gameStarted">
                                             <option value="X">X</option>
                                             <option value="O">O</option>
                                         </select>
                                     </div>
                                 </div>
+
+                                <button class="btn" @click="startGame" v-if="!gameStarted">Start Game</button>
+                                <button class="btn" @click="endGame" v-if="gameStarted">End Game</button>
+                                <button class="btn" @click="robotMove">Robot Move</button>
                             </div>
                         </div>
                     </div>
 
                     <!-- Right column — Image Processing -->
                     <div class="card">
-                        <div class="card-title">Image Processing</div>
-
-                        <select v-model="selectedDebug" class="debug-select">
-                            <option value="final">Final</option>
-                            <option value="board">Board</option>
-                            <option value="edges">Edges</option>
-                            <option value="cells">Cells</option>
-                        </select>
+                        <div class="card-title image-processing-title">
+                            Image Processing
+                            <div class="debug-select-row">
+                                <select v-model="selectedDebug" class="debug-select">
+                                    <option value="final">Final</option>
+                                    <option value="board">Board</option>
+                                    <option value="edges">Edges</option>
+                                    <option value="cells">Cells</option>
+                                </select>
+                                <button class="btn btn-refresh" @click="processBoard" title="Process Board">
+                                    <svg class="refresh-icon" width="20" height="24" viewBox="0 0 20 24" fill="none">
+                                        <path d="M10 5 a7 7 0 1 1 -7 7" stroke="#00e0ff" stroke-width="2"
+                                            stroke-linecap="round" stroke-linejoin="round" />
+                                        <polyline points="12 10 7 4 15 3" stroke="#00e0ff" stroke-width="2"
+                                            stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
 
                         <div class="img-box img-box-3x4">
                             <div v-show="selectedDebug==='final'" id="debugFinal" class="mjpeg-wrapper"></div>

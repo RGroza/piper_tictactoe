@@ -11,12 +11,13 @@ const app = Vue.createApp({
             board: Array(9).fill(null),
             gridDetected: false,
             winLine: null, // {from: idx1, to: idx2}
+            gameStarted: false,
         };
     },
 
     created() {
         this.discoverUrls();
-        this.connect();
+        // this.connect();
     },
 
     methods: {
@@ -106,6 +107,16 @@ const app = Vue.createApp({
                 width: 810,
                 height: 1067,
             });
+        },
+
+        startGame() {
+            this.drawGrid();
+            this.gameStarted = true;
+        },
+
+        endGame() {
+            this.clearBoard();
+            this.gameStarted = false;
         },
 
         processBoard() {
