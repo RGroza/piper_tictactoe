@@ -2,6 +2,7 @@
 #include <fstream>
 #include <memory>
 #include <opencv2/opencv.hpp>
+#include <opencv2/ximgproc.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <string>
 #include <vector>
@@ -15,9 +16,13 @@ class ContourPlannerNode : public rclcpp::Node {
     ContourPlannerNode() : Node("contour_planner_node") {
         this->declare_parameter<std::string>("image_name", "");
         this->declare_parameter<std::string>("output_csv", "contour_coords.csv");
+        this->declare_parameter<bool>("skeletonize", false);
+        this->declare_parameter<int>("step_size", 1);
 
         std::string image_name = this->get_parameter("image_name").as_string();
         std::string output_csv = this->get_parameter("output_csv").as_string();
+        skeletonize_           = this->get_parameter("skeletonize").as_bool();
+        step_size_             = this->get_parameter("step_size").as_int();
 
         std::string image_path;
         if (!image_name.empty()) {
@@ -38,11 +43,13 @@ class ContourPlannerNode : public rclcpp::Node {
         std::vector<std::vector<cv::Point>> contours = process_image(image_path, output_csv);
 
         // Call service for each contour
-        call_execute_trajectory_for_contours(contours);
+        // call_execute_trajectory_for_contours(contours);
     }
 
   private:
     std::vector<int> image_dimensions_;
+    bool skeletonize_;
+    int step_size_;
     rclcpp::Client<piper_trajectory::srv::ExecuteTrajectory>::SharedPtr trajectory_client_;
     rclcpp::CallbackGroup::SharedPtr client_callback_group_;
 
@@ -59,11 +66,24 @@ class ContourPlannerNode : public rclcpp::Node {
 
         cv::Mat gray, blurred, edges;
         cv::cvtColor(image, gray, cv::COLOR_BGR2GRAY);
-        cv::GaussianBlur(gray, blurred, cv::Size(5, 5), 0);
-        cv::Canny(blurred, edges, 50, 150);
 
         std::vector<std::vector<cv::Point>> contours;
-        cv::findContours(edges, contours, cv::RETR_LIST, cv::CHAIN_APPROX_NONE);
+        if (skeletonize_) {
+            // Skeletonization (thinning) to get centerline
+            cv::Mat binary;
+            cv::threshold(gray, binary, 200, 255, cv::THRESH_BINARY);
+            cv::imshow("Binary", binary);
+            cv::Mat skeleton;
+            cv::ximgproc::thinning(binary, skeleton, cv::ximgproc::THINNING_ZHANGSUEN);
+            cv::imshow("Skeleton", skeleton);
+            // Find contours on skeleton
+            cv::findContours(skeleton, contours, cv::RETR_LIST, cv::CHAIN_APPROX_NONE);
+        } else {
+            // Regular edge detection
+            cv::GaussianBlur(gray, blurred, cv::Size(5, 5), 0);
+            cv::Canny(blurred, edges, 50, 150);
+            cv::findContours(edges, contours, cv::RETR_LIST, cv::CHAIN_APPROX_NONE);
+        }
 
         // Draw contours image
         cv::Mat contours_image = cv::Mat::zeros(image.size(), CV_8UC3);
@@ -81,8 +101,6 @@ class ContourPlannerNode : public rclcpp::Node {
             return {};
         }
         ofs << "contour_id,x,y\n";
-        int step_size = 1;
-        // double angle_threshold    = 45.0;
         double min_contour_length = 10.0;
 
         std::vector<std::vector<cv::Point>> filtered_contours;
@@ -98,34 +116,9 @@ class ContourPlannerNode : public rclcpp::Node {
 
             std::vector<cv::Point> selected_points;
             int contour_size = static_cast<int>(contour.size());
-            for (int j = 0; j < contour_size; j += step_size) {
+            for (int j = 0; j < contour_size; j += step_size_) {
                 selected_points.push_back(contour[j]);
             }
-
-            // // Detect sharp corners
-            // for (int j = 0; j < contour_size; ++j) {
-            //     cv::Point prev = contour[(j - step_size + contour_size) % contour_size];
-            //     cv::Point curr = contour[j];
-            //     cv::Point next = contour[(j + step_size) % contour_size];
-            //     cv::Point2f v1 = prev - curr;
-            //     cv::Point2f v2 = next - curr;
-            //     double dot     = v1.dot(v2);
-            //     double norm1   = cv::norm(v1);
-            //     double norm2   = cv::norm(v2);
-            //     if (norm1 > 1e-3 && norm2 > 1e-3) {
-            //         double angle = std::acos(dot / (norm1 * norm2)) * 180.0 / CV_PI;
-            //         if (angle < angle_threshold) {
-            //             selected_points.push_back(curr);
-            //         }
-            //     }
-            // }
-
-            // // Remove duplicates
-            // std::sort(selected_points.begin(), selected_points.end(),
-            //           [](const cv::Point& a, const cv::Point& b) { return (a.x < b.x) || (a.x == b.x && a.y < b.y);
-            //           });
-            // selected_points.erase(std::unique(selected_points.begin(), selected_points.end()),
-            // selected_points.end());
 
             // Output to CSV and draw points
             for (const auto& pt : selected_points) {
