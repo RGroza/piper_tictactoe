@@ -46,6 +46,9 @@ const app = Vue.createApp({
 
                 this.startCameraStream();
                 this.startDebugStreams();
+
+                this.processBoard();
+                this.processBoard();
             });
 
             this.ros.on("error", (err) => {
@@ -140,6 +143,9 @@ const app = Vue.createApp({
                 console.log("Service response:", result);
                 if (result && result.success) {
                     this.gridDetected = true;
+                    this.gameStarted = true;
+
+                    // Update board controls with current board state
                     for (let i = 0; i < 9; i++) {
                         if (result.board[i] === 0) {
                             this.board[i] = "O";
@@ -176,11 +182,13 @@ const app = Vue.createApp({
 
             service.callService(request, (result) => {
                 console.log("Service response:", result);
-                if (mode === 0 && result && result.success) {
-                    this.board[cell_number - 1] = symbol;
-                    // Call processBoard twice to update detection images
+                if (result && result.success) {
+                    this.board[result.cell_number - 1] = symbol;
+
+                    // Call processBoard to update detection images
                     this.processBoard();
                     this.processBoard();
+
                     // Check if game is over
                     if (result.game_over) {
                         let cell1 = result.winner[1];
@@ -189,7 +197,6 @@ const app = Vue.createApp({
                     }
                 }
             });
-
         },
 
         playerMove(cell_number) {
@@ -233,10 +240,10 @@ const app = Vue.createApp({
 
             service.callService(request, (result) => {
                 console.log("Service response:", result);
+                this.board = Array(9).fill(null);
+                this.gridDetected = false;
+                this.winLine = null;
             });
-
-            this.board = Array(9).fill(null);
-            this.winLine = null;
         },
 
         playerChanged() {

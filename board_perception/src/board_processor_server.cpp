@@ -3,8 +3,9 @@
 using std::placeholders::_1;
 
 BoardProcessorServer::BoardProcessorServer() : Node("ttt_board_processor_server"), processor_(this, true) {
-    image_sub_ =
-        this->create_subscription<sensor_msgs::msg::Image>("/camera/D435/color/image_raw", rclcpp::SensorDataQoS(),
+    auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable().durability_volatile();
+
+    image_sub_ = this->create_subscription<sensor_msgs::msg::Image>("/camera/D435/color/image_raw", qos,
                                                            std::bind(&BoardProcessorServer::imageCallback, this, _1));
 
     srv_ = this->create_service<board_perception::srv::ProcessBoard>(
@@ -26,7 +27,7 @@ void BoardProcessorServer::handleService(const std::shared_ptr<board_perception:
     response->success = false;
 
     if (!latest_image_) {
-        RCLCPP_WARN(this->get_logger(), "No image received yet on /camera/color/image_raw");
+        RCLCPP_WARN(this->get_logger(), "No image received yet on /camera/D435/color/image_raw");
         return;
     }
 

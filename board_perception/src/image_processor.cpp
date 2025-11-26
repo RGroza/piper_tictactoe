@@ -17,7 +17,7 @@ ImageProcessor::ImageProcessor(rclcpp::Node* node, bool debug) : node_(node), de
     debug_output_dir_ = "/home/user/ros2_ws/src/piper_tictactoe/board_perception/debug";
 
     if (debug_) {
-        auto qos   = rclcpp::QoS(1).transient_local();
+        auto qos = rclcpp::QoS(rclcpp::KeepLast(5)).reliable().transient_local();
         pub_board_ = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/board", qos);
         pub_edges_ = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/edges", qos);
         pub_cells_ = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/cells", qos);

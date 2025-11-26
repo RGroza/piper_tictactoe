@@ -90,6 +90,8 @@ class MoveManager : public rclcpp::Node {
             RCLCPP_INFO(this->get_logger(), "Robot best move on cell %d", cell);
         }
 
+        response->cell_number = cell;
+
         // Prepare and send trajectory execution request
         auto trajectory_request         = std::make_shared<piper_trajectory::srv::ExecuteTrajectory::Request>();
         trajectory_request->type        = request->symbol;
