@@ -17,7 +17,7 @@ const app = Vue.createApp({
 
     created() {
         this.discoverUrls();
-        // this.connect();
+        this.connect();
     },
 
     methods: {
@@ -56,6 +56,13 @@ const app = Vue.createApp({
                 console.warn("ROSBridge connection closed");
                 this.connected = false;
             });
+        },
+
+        disconnect() {
+            if (this.ros) {
+                this.ros.close();
+                this.connected = false;
+            }
         },
 
         startCameraStream() {
