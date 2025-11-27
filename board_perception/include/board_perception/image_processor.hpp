@@ -17,7 +17,7 @@ class ImageProcessor {
     std::string debug_output_dir_;
 
     void orderPoints(std::vector<cv::Point2f>& corner_pts);
-    int findClosestEdge(const std::vector<cv::Vec4i>& lines, int coor, bool vertical);
+    int findClosestEdge(const std::vector<cv::Vec4i>& lines, int starting_coor, int direction, bool vertical);
     void saveDebug(const std::string& name, const cv::Mat& img);
     void publishDebug(rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub, const cv::Mat& img);
     double lineLength(const cv::Vec4i& line);
@@ -25,5 +25,6 @@ class ImageProcessor {
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_board_;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_edges_;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_cells_;
+    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_detection_;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_final_;
 };

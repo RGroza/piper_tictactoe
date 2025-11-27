@@ -14,15 +14,16 @@ constexpr float BOARD_ASPECT_RATIO = BOARD_HEIGHT / BOARD_WIDTH;
 } // namespace
 
 ImageProcessor::ImageProcessor(rclcpp::Node* node, bool debug) : node_(node), debug_(debug) {
-    // debug_output_dir_ = "/home/user/ros2_ws/src/piper_tictactoe/board_perception/debug";
-    debug_output_dir_ = "/home/robert/ROS/Final/ros2_ws/src/tictactoe/board_perception/debug";
+    debug_output_dir_ = "/home/user/ros2_ws/src/piper_tictactoe/board_perception/debug";
+    // debug_output_dir_ = "/home/robert/ROS/Final/ros2_ws/src/tictactoe/board_perception/debug";
 
     if (debug_) {
-        auto qos   = rclcpp::QoS(rclcpp::KeepLast(5)).reliable().transient_local();
-        pub_board_ = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/board", qos);
-        pub_edges_ = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/edges", qos);
-        pub_cells_ = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/cells", qos);
-        pub_final_ = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/final", qos);
+        auto qos       = rclcpp::QoS(rclcpp::KeepLast(5)).reliable().transient_local();
+        pub_board_     = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/board", qos);
+        pub_edges_     = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/edges", qos);
+        pub_cells_     = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/cells", qos);
+        pub_detection_ = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/detection", qos);
+        pub_final_     = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/final", qos);
     }
 }
 
@@ -85,32 +86,78 @@ void ImageProcessor::orderPoints(vector<Point2f>& corner_pts) {
     corner_pts[3] = *min_element(pts.begin(), pts.end(), min_diff);
 }
 
-int ImageProcessor::findClosestEdge(const vector<Vec4i>& lines, int coor, bool vertical) {
+int ImageProcessor::findClosestEdge(const vector<Vec4i>& lines, int starting_coor, int direction, bool vertical) {
     if (lines.empty())
-        return coor;
+        return starting_coor;
 
-    int closest  = vertical ? lines[0][0] : lines[0][1];
-    int min_diff = abs(closest - coor);
+    int min_diff = numeric_limits<int>::max();
+    int closest  = starting_coor;
 
     for (auto& L : lines) {
         int c1 = vertical ? L[0] : L[1];
         int c2 = vertical ? L[2] : L[3];
 
-        int line_coor = c1;
-        int diff      = abs(c1 - coor);
-        if (abs(c2 - coor) < diff) {
+        int line_coor, diff;
+        int diff_c1 = direction * (c1 - starting_coor);
+        int diff_c2 = direction * (c2 - starting_coor);
+
+        if (diff_c1 >= 0 && (diff_c1 < diff_c2 || diff_c2 < 0)) {
+            line_coor = c1;
+            diff      = diff_c1;
+        } else {
             line_coor = c2;
-            diff      = abs(c2 - coor);
+            diff      = diff_c2;
         }
 
-        if (diff < min_diff) {
+        if (diff >= 0 && diff < min_diff) {
             min_diff = diff;
             closest  = line_coor;
         }
     }
 
     // Add small cropping factor to avoid including grid lines
-    return closest + 0.02 * (coor - closest);
+    return closest + 0.02 * (starting_coor - closest);
+}
+
+inline double lineLength(const cv::Vec4i& l) {
+    int dx = l[2] - l[0];
+    int dy = l[3] - l[1];
+    return std::sqrt(dx * dx + dy * dy);
+}
+
+int orientation(cv::Point2f p, cv::Point2f q, cv::Point2f r) {
+    float val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
+    if (fabs(val) < 1e-6)
+        return 0;             // colinear
+    return (val > 0) ? 1 : 2; // clock or counterclock wise
+}
+
+bool onSegment(cv::Point2f p, cv::Point2f q, cv::Point2f r) {
+    return q.x <= std::max(p.x, r.x) && q.x >= std::min(p.x, r.x) && q.y <= std::max(p.y, r.y) &&
+           q.y >= std::min(p.y, r.y);
+}
+
+bool doIntersect(cv::Point2f p1, cv::Point2f q1, cv::Point2f p2, cv::Point2f q2) {
+    int o1 = orientation(p1, q1, p2);
+    int o2 = orientation(p1, q1, q2);
+    int o3 = orientation(p2, q2, p1);
+    int o4 = orientation(p2, q2, q1);
+
+    // General case
+    if (o1 != o2 && o3 != o4)
+        return true;
+
+    // Special Cases
+    if (o1 == 0 && onSegment(p1, p2, q1))
+        return true;
+    if (o2 == 0 && onSegment(p1, q2, q1))
+        return true;
+    if (o3 == 0 && onSegment(p2, p1, q2))
+        return true;
+    if (o4 == 0 && onSegment(p2, q1, q2))
+        return true;
+
+    return false;
 }
 
 bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
@@ -119,14 +166,13 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
         return false;
     }
 
-    Mat gray, mask;
-
     // --------------------------------------------------------
-    // 1. Convert to grayscale and mask
+    // 1. Convert to HSV and mask
     // --------------------------------------------------------
-    cvtColor(frame, gray, COLOR_BGR2GRAY);
+    Mat hsv, mask;
+    cvtColor(frame, hsv, COLOR_BGR2HSV);
     saveDebug("frame", frame);
-    inRange(gray, Scalar(80), Scalar(255), mask);
+    inRange(hsv, Scalar(70, 130, 130), Scalar(130, 220, 255), mask);
     saveDebug("mask", mask);
 
     // --------------------------------------------------------
@@ -139,8 +185,10 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
     vector<Point> inner;
 
     for (auto& c : contours) {
-        int area = contourArea(c);
-        if (area > 100000 && area < min_contour_area) {
+        int area   = contourArea(c);
+        int length = int(arcLength(c, true));
+        RCLCPP_INFO(node_->get_logger(), "Found contour with area, length: %d, %d", area, length);
+        if (area > 10000 && area < min_contour_area) {
             RCLCPP_INFO(node_->get_logger(), "Contour area: %d", area);
             min_contour_area = area;
             inner            = c;
@@ -208,6 +256,7 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
     // --------------------------------------------------------
     // 6. Use adaptive threshold and Canny to find edges
     // --------------------------------------------------------
+    Mat gray;
     cvtColor(board, gray, COLOR_BGR2GRAY);
 
     Mat blurred;
@@ -242,11 +291,11 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
         int dx = abs(L[0] - L[2]);
         int dy = abs(L[1] - L[3]);
 
-        if (dx < pixel_threshold && ((L[0] > 0.23 * board.cols && L[0] < 0.43 * board.cols) ||
-                                     (L[0] > 0.57 * board.cols && L[0] < 0.77 * board.cols)))
+        if (dx < pixel_threshold && ((L[0] > 0.25 * board.cols && L[0] < 0.40 * board.cols) ||
+                                     (L[0] > 0.60 * board.cols && L[0] < 0.75 * board.cols)))
             vertical.push_back(L);
-        else if (dy < pixel_threshold && ((L[1] > 0.23 * board.rows && L[1] < 0.43 * board.rows) ||
-                                          (L[1] > 0.57 * board.rows && L[1] < 0.77 * board.rows)))
+        else if (dy < pixel_threshold && ((L[1] > 0.25 * board.rows && L[1] < 0.40 * board.rows) ||
+                                          (L[1] > 0.60 * board.rows && L[1] < 0.75 * board.rows)))
             horizontal.push_back(L);
     }
 
@@ -264,17 +313,17 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
     vector<int> x_edges, y_edges;
 
     x_edges.push_back(0);
-    x_edges.push_back(findClosestEdge(vertical, 0, true));
-    x_edges.push_back(findClosestEdge(vertical, int(0.4 * board.cols), true));
-    x_edges.push_back(findClosestEdge(vertical, int(0.6 * board.cols), true));
-    x_edges.push_back(findClosestEdge(vertical, board.cols - 1, true));
+    x_edges.push_back(findClosestEdge(vertical, int(0.25 * board.cols), 1, true));
+    x_edges.push_back(findClosestEdge(vertical, int(0.40 * board.cols), -1, true));
+    x_edges.push_back(findClosestEdge(vertical, int(0.60 * board.cols), 1, true));
+    x_edges.push_back(findClosestEdge(vertical, int(0.75 * board.cols), -1, true));
     x_edges.push_back(board.cols - 1);
 
     y_edges.push_back(0);
-    y_edges.push_back(findClosestEdge(horizontal, 0, false));
-    y_edges.push_back(findClosestEdge(horizontal, int(0.4 * board.rows), false));
-    y_edges.push_back(findClosestEdge(horizontal, int(0.6 * board.rows), false));
-    y_edges.push_back(findClosestEdge(horizontal, board.rows - 1, false));
+    y_edges.push_back(findClosestEdge(horizontal, int(0.25 * board.rows), 1, false));
+    y_edges.push_back(findClosestEdge(horizontal, int(0.40 * board.rows), -1, false));
+    y_edges.push_back(findClosestEdge(horizontal, int(0.60 * board.rows), 1, false));
+    y_edges.push_back(findClosestEdge(horizontal, int(0.75 * board.rows), -1, false));
     y_edges.push_back(board.rows - 1);
 
     Mat edge_display = board.clone();
@@ -332,6 +381,11 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
     // --------------------------------------------------------
     // 10. Detect X or O in each cell
     // --------------------------------------------------------
+    // Store final detected lines and circles
+    Mat final_image = board.clone();
+    vector<Vec4i> final_lines;
+    vector<pair<Point2f, float>> final_circles;
+
     for (int i = 0; i < 9; i++) {
         array<int, 4> corners = cell_corners[i];
         Rect cell_rect(corners[0], corners[1], corners[2] - corners[0], corners[3] - corners[1]);
@@ -345,21 +399,48 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
         // --------------------------------------------------------
         // Detect Xs
         // --------------------------------------------------------
-        // Detect X using Hough lines
+        // Detect add lines using Hough lines
         Mat cell_edges = edges(cell_rect).clone();
         vector<Vec4i> lines;
-        HoughLinesP(cell_edges, lines, 1, CV_PI / 180, 50, 0.05 * BOARD_IMAGE_WIDTH, 0.015 * BOARD_IMAGE_WIDTH);
+        HoughLinesP(cell_edges, lines, 1, CV_PI / 180, 20, 0.1 * BOARD_IMAGE_WIDTH, 0.05 * BOARD_IMAGE_WIDTH);
 
-        // Look for lines at ~45 and ~135 degrees
-        bool found_x = false;
+        // Display detected lines for debugging
         for (auto& L : lines) {
-            double angle = abs(atan2(L[3] - L[1], L[2] - L[0])) * 180.0 / CV_PI;
-            if ((angle > 25 && angle < 75) || (angle > 105 && angle < 155)) {
-                line(board, Point(L[0] + corners[0], L[1] + corners[1]), Point(L[2] + corners[0], L[3] + corners[1]),
-                     Scalar(255, 255, 0), 3);
-                found_x = true;
-                break;
+            line(board, Point(L[0] + corners[0], L[1] + corners[1]), Point(L[2] + corners[0], L[3] + corners[1]),
+                 Scalar(255, 0, 0), 2);
+        }
+
+        // Find two lines that intersect at ~90 degrees
+        bool found_x = false;
+        for (size_t m = 0; m < lines.size(); ++m) {
+            double angle1 = atan2(lines[m][3] - lines[m][1], lines[m][2] - lines[m][0]) * 180.0 / CV_PI;
+            for (size_t n = m + 1; n < lines.size(); ++n) {
+                double angle2 = atan2(lines[n][3] - lines[n][1], lines[n][2] - lines[n][0]) * 180.0 / CV_PI;
+                double diff   = fabs(angle1 - angle2);
+
+                if (diff > 90)
+                    diff = 180 - diff; // handle wrap-around
+
+                if (diff > 60 && diff < 120) {
+                    cv::Point2f p1(lines[m][0], lines[m][1]);
+                    cv::Point2f q1(lines[m][2], lines[m][3]);
+                    cv::Point2f p2(lines[n][0], lines[n][1]);
+                    cv::Point2f q2(lines[n][2], lines[n][3]);
+
+                    if (doIntersect(p1, q1, p2, q2)) {
+                        Vec4i final_line1 = {lines[m][0] + corners[0], lines[m][1] + corners[1],
+                                             lines[m][2] + corners[0], lines[m][3] + corners[1]};
+                        Vec4i final_line2 = {lines[n][0] + corners[0], lines[n][1] + corners[1],
+                                             lines[n][2] + corners[0], lines[n][3] + corners[1]};
+                        final_lines.push_back(final_line1);
+                        final_lines.push_back(final_line2);
+                        found_x = true;
+                        break;
+                    }
+                }
             }
+            if (found_x)
+                break;
         }
 
         if (found_x) {
@@ -432,13 +513,25 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
         float radius;
         minEnclosingCircle(largest_contour, center, radius);
 
-        // Draw fitted circle on board image
-        circle(board, Point(int(center.x) + corners[0], int(center.y) + corners[1]), int(radius), Scalar(255, 255, 0),
-               2);
+        // Save circle to be drawn later
+        center += Point2f(corners[0], corners[1]);
+        final_circles.push_back({center, radius});
     }
 
-    saveDebug("final_detection", board);
-    publishDebug(pub_final_, board);
+    saveDebug("detection", board);
+    publishDebug(pub_detection_, board);
+
+    // Display final detected lines and circles
+    for (const auto& line_data : final_lines) {
+        line(final_image, Point(line_data[0], line_data[1]), Point(line_data[2], line_data[3]), Scalar(255, 255, 0), 2);
+    }
+    for (const auto& circle_data : final_circles) {
+        circle(final_image, Point(int(circle_data.first.x), int(circle_data.first.y)), int(circle_data.second),
+               Scalar(255, 255, 0), 2);
+    }
+
+    saveDebug("final_detection", final_image);
+    publishDebug(pub_final_, final_image);
 
     return true;
 }

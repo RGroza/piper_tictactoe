@@ -125,6 +125,7 @@
                             <div class="debug-select-row">
                                 <select v-model="selectedDebug" class="debug-select">
                                     <option value="final">Final</option>
+                                    <option value="detection">Detection</option>
                                     <option value="board">Board</option>
                                     <option value="edges">Edges</option>
                                     <option value="cells">Cells</option>
@@ -142,6 +143,7 @@
 
                         <div class="img-box img-box-3x4">
                             <div v-show="selectedDebug==='final'" id="debugFinal" class="mjpeg-wrapper"></div>
+                            <div v-show="selectedDebug==='detection'" id="debugDetection" class="mjpeg-wrapper"></div>
                             <div v-show="selectedDebug==='board'" id="debugBoard" class="mjpeg-wrapper"></div>
                             <div v-show="selectedDebug==='edges'" id="debugEdges" class="mjpeg-wrapper"></div>
                             <div v-show="selectedDebug==='cells'" id="debugCells" class="mjpeg-wrapper"></div>

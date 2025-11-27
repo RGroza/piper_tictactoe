@@ -110,6 +110,15 @@ const app = Vue.createApp({
             });
 
             new MJPEGCANVAS.Viewer({
+                divID: "debugDetection",
+                host: this.videoHost,
+                topic: "/board_processor/detection",
+                ssl: false,
+                width: 810,
+                height: 1067,
+            });
+
+            new MJPEGCANVAS.Viewer({
                 divID: "debugFinal",
                 host: this.videoHost,
                 topic: "/board_processor/final",
