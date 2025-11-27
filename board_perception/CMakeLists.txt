@@ -40,4 +40,8 @@ rosidl_target_interfaces(board_processor_server
 install(TARGETS board_processor_server
   DESTINATION lib/${PROJECT_NAME})
 
+install(DIRECTORY images/
+  DESTINATION share/${PROJECT_NAME}/images
+)
+
 ament_package()

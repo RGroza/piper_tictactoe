@@ -14,10 +14,11 @@ constexpr float BOARD_ASPECT_RATIO = BOARD_HEIGHT / BOARD_WIDTH;
 } // namespace
 
 ImageProcessor::ImageProcessor(rclcpp::Node* node, bool debug) : node_(node), debug_(debug) {
-    debug_output_dir_ = "/home/user/ros2_ws/src/piper_tictactoe/board_perception/debug";
+    // debug_output_dir_ = "/home/user/ros2_ws/src/piper_tictactoe/board_perception/debug";
+    debug_output_dir_ = "/home/robert/ROS/Final/ros2_ws/src/tictactoe/board_perception/debug";
 
     if (debug_) {
-        auto qos = rclcpp::QoS(rclcpp::KeepLast(5)).reliable().transient_local();
+        auto qos   = rclcpp::QoS(rclcpp::KeepLast(5)).reliable().transient_local();
         pub_board_ = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/board", qos);
         pub_edges_ = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/edges", qos);
         pub_cells_ = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/cells", qos);
@@ -108,7 +109,8 @@ int ImageProcessor::findClosestEdge(const vector<Vec4i>& lines, int coor, bool v
         }
     }
 
-    return closest;
+    // Add small cropping factor to avoid including grid lines
+    return closest + 0.02 * (coor - closest);
 }
 
 bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
@@ -138,7 +140,8 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
 
     for (auto& c : contours) {
         int area = contourArea(c);
-        if (area > 10000 && area < min_contour_area) {
+        if (area > 100000 && area < min_contour_area) {
+            RCLCPP_INFO(node_->get_logger(), "Contour area: %d", area);
             min_contour_area = area;
             inner            = c;
         }
@@ -331,7 +334,6 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
     // --------------------------------------------------------
     for (int i = 0; i < 9; i++) {
         array<int, 4> corners = cell_corners[i];
-
         Rect cell_rect(corners[0], corners[1], corners[2] - corners[0], corners[3] - corners[1]);
 
         if (cell_rect.x < 0 || cell_rect.y < 0 || cell_rect.x + cell_rect.width > edges.cols ||
@@ -340,10 +342,15 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
             continue;
         }
 
+        // --------------------------------------------------------
+        // Detect Xs
+        // --------------------------------------------------------
+        // Detect X using Hough lines
         Mat cell_edges = edges(cell_rect).clone();
         vector<Vec4i> lines;
         HoughLinesP(cell_edges, lines, 1, CV_PI / 180, 50, 0.05 * BOARD_IMAGE_WIDTH, 0.015 * BOARD_IMAGE_WIDTH);
 
+        // Look for lines at ~45 and ~135 degrees
         bool found_x = false;
         for (auto& L : lines) {
             double angle = abs(atan2(L[3] - L[1], L[2] - L[0])) * 180.0 / CV_PI;
@@ -360,22 +367,74 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
             continue;
         }
 
-        Mat gray_cell;
-        cvtColor(cells[i], gray_cell, COLOR_BGR2GRAY);
-        GaussianBlur(gray_cell, gray_cell, Size(5, 5), 0);
+        // --------------------------------------------------------
+        // Detect Os
+        // --------------------------------------------------------
+        // Dilate then erode (closing) to connect gaps
+        Mat morph;
+        int morph_size = 2;
+        Mat kernel     = getStructuringElement(MORPH_ELLIPSE, Size(2 * morph_size + 1, 2 * morph_size + 1));
+        morphologyEx(cell_edges, morph, MORPH_CLOSE, kernel);
 
-        vector<Vec3f> circles;
-        HoughCircles(gray_cell, circles, HOUGH_GRADIENT, 1, 200, 10, 50, 0.05 * BOARD_IMAGE_WIDTH,
-                     0.33 * BOARD_IMAGE_WIDTH);
+        // Blur to further reduce noise
+        GaussianBlur(morph, morph, Size(5, 5), 1.5);
 
-        if (!circles.empty()) {
-            for (auto& c : circles)
-                circle(board, Point(c[0] + corners[0], c[1] + corners[1]), c[2], Scalar(0, 255, 0), 3);
-            result[i] = 0;
+        // Threshold to get binary image (if needed)
+        threshold(morph, morph, 50, 255, THRESH_BINARY);
+
+        // Find contours in the cell edges to detect circles
+        vector<vector<Point>> cell_contours;
+        // Use RETR_EXTERNAL and CHAIN_APPROX_NONE for longer, less fragmented contours
+        findContours(morph, cell_contours, RETR_EXTERNAL, CHAIN_APPROX_NONE);
+
+        // Filter contours based on length and area to find circle-like shapes
+        std::vector<std::vector<Point>> filtered_circles;
+        for (const auto& contour : cell_contours) {
+            double length = arcLength(contour, true);
+            double area   = contourArea(contour);
+            if (length > 200.0 && area > 200.0) {
+                RCLCPP_INFO(node_->get_logger(), "Cell %d contour length: %.2f area: %.2f", i + 1, length, area);
+                filtered_circles.push_back(contour);
+            }
+        }
+
+        if (filtered_circles.empty()) {
+            RCLCPP_INFO(node_->get_logger(), "No circle-like contours found in cell %d", i + 1);
+            result[i] = -1;
             continue;
         }
 
-        result[i] = -1;
+        result[i] = 0;
+
+        // Find the contour with the largest area
+        double max_area = 0.0;
+        std::vector<Point> largest_contour;
+        for (const auto& contour : filtered_circles) {
+            double area = contourArea(contour);
+            if (area > max_area) {
+                max_area        = area;
+                largest_contour = contour;
+            }
+        }
+
+        for (auto& contour : filtered_circles) {
+            // Draw contour in green on board image
+            drawContours(board, vector<vector<Point>>{contour}, -1, Scalar(0, 150, 0), 2, LINE_AA, noArray(), 0,
+                         Point(corners[0], corners[1]));
+        }
+
+        // Highlight the largest contour in red
+        drawContours(board, vector<vector<Point>>{largest_contour}, -1, Scalar(0, 0, 255), 2, LINE_AA, noArray(), 0,
+                     Point(corners[0], corners[1]));
+
+        // Fit circle to largest contour
+        Point2f center;
+        float radius;
+        minEnclosingCircle(largest_contour, center, radius);
+
+        // Draw fitted circle on board image
+        circle(board, Point(int(center.x) + corners[0], int(center.y) + corners[1]), int(radius), Scalar(255, 255, 0),
+               2);
     }
 
     saveDebug("final_detection", board);
