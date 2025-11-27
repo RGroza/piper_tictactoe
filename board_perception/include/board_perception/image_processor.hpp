@@ -8,19 +8,17 @@
 
 class ImageProcessor {
   public:
-    ImageProcessor(rclcpp::Node* node, bool debug);
+    ImageProcessor(rclcpp::Node* node);
     bool process(const cv::Mat& frame, std::array<int, 9>& result);
+    void enableDebug();
 
   private:
     rclcpp::Node* node_;
     bool debug_;
     std::string debug_output_dir_;
 
-    void orderPoints(std::vector<cv::Point2f>& corner_pts);
-    int findClosestEdge(const std::vector<cv::Vec4i>& lines, int starting_coor, int direction, bool vertical);
-    void saveDebug(const std::string& name, const cv::Mat& img);
-    void publishDebug(rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub, const cv::Mat& img);
-    double lineLength(const cv::Vec4i& line);
+    void saveImage(const std::string& name, const cv::Mat& img);
+    void publishImage(rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub, const cv::Mat& img);
 
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_board_;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_edges_;

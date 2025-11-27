@@ -4,7 +4,12 @@
 
 using std::placeholders::_1;
 
-BoardProcessorServer::BoardProcessorServer() : Node("ttt_board_processor_server"), processor_(this, true) {
+BoardProcessorServer::BoardProcessorServer() : Node("ttt_board_processor_server"), processor_(this) {
+    bool debug = this->declare_parameter<bool>("debug", false);
+    if (debug) {
+        processor_.enableDebug();
+    }
+
     image_name_ = this->declare_parameter<std::string>("image_name", "");
 
     if (!image_name_.empty()) {

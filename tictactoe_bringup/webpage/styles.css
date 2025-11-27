@@ -392,46 +392,15 @@ body {
     justify-content: flex-start;
 }
 
-.debug-select-row {
-    display: flex;
-    align-items: center;
-    gap: 0;
-    margin-left: 16px;
-}
-
-.debug-select {
+.image-select {
     width: auto;
     min-width: 120px;
     padding: 4px 8px;
     margin: 0;
     background: #222;
     border: 1px solid #00e0ff;
-    border-radius: 6px 0 0 6px;
+    border-radius: 6px;
     color: #00e0ff;
-    border-right: none;
-}
-
-.btn-refresh {
-    background: #222;
-    border: 1px solid #00e0ff;
-    border-radius: 0 6px 6px 0;
-    border-left: none;
-    padding: 0 10px;
-    transition: background 0.2s;
-}
-
-.btn-refresh:hover {
-    background: rgba(0, 224, 255, 0.08);
-}
-
-.debug-select,
-.btn-refresh {
-    height: 32px;
-    box-sizing: border-box;
-}
-
-.refresh-icon {
-    display: block;
 }
 
 /* ===== Bottom Bar ===== */

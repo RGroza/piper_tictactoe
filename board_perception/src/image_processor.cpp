@@ -13,21 +13,23 @@ constexpr int BOARD_IMAGE_WIDTH    = 900;
 constexpr float BOARD_ASPECT_RATIO = BOARD_HEIGHT / BOARD_WIDTH;
 } // namespace
 
-ImageProcessor::ImageProcessor(rclcpp::Node* node, bool debug) : node_(node), debug_(debug) {
+ImageProcessor::ImageProcessor(rclcpp::Node* node) : node_(node) {
     // debug_output_dir_ = "/home/user/ros2_ws/src/piper_tictactoe/board_perception/debug";
     debug_output_dir_ = "/home/robert/ROS/Final/ros2_ws/src/tictactoe/board_perception/debug";
 
-    if (debug_) {
-        auto qos       = rclcpp::QoS(rclcpp::KeepLast(5)).reliable().transient_local();
-        pub_board_     = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/board", qos);
-        pub_edges_     = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/edges", qos);
-        pub_cells_     = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/cells", qos);
-        pub_detection_ = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/detection", qos);
-        pub_final_     = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/final", qos);
-    }
+    auto qos       = rclcpp::QoS(rclcpp::KeepLast(5)).reliable().transient_local();
+    pub_board_     = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/board", qos);
+    pub_edges_     = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/edges", qos);
+    pub_cells_     = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/cells", qos);
+    pub_detection_ = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/detection", qos);
+    pub_final_     = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/final", qos);
 }
 
-void ImageProcessor::saveDebug(const string& name, const cv::Mat& img) {
+void ImageProcessor::enableDebug() {
+    debug_ = true;
+}
+
+void ImageProcessor::saveImage(const string& name, const cv::Mat& img) {
     if (!debug_)
         return;
     if (img.empty())
@@ -39,10 +41,8 @@ void ImageProcessor::saveDebug(const string& name, const cv::Mat& img) {
     cout << "Saved debug image: " << filename << endl;
 }
 
-void ImageProcessor::publishDebug(rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub, const cv::Mat& img) {
-    if (!debug_ || !pub)
-        return;
-    if (img.empty())
+void ImageProcessor::publishImage(rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub, const cv::Mat& img) {
+    if (!pub || img.empty())
         return;
 
     std::string encoding;
@@ -66,13 +66,14 @@ void ImageProcessor::publishDebug(rclcpp::Publisher<sensor_msgs::msg::Image>::Sh
 
     auto msg = cv_bridge::CvImage(std_msgs::msg::Header(), encoding, safe).toImageMsg();
 
-    RCLCPP_INFO(node_->get_logger(), "Publishing debug image: encoding=%s step=%u expected=%u", encoding.c_str(),
-                msg->step, safe.cols * (safe.channels()));
+    if (debug_)
+        RCLCPP_INFO(node_->get_logger(), "Publishing debug image: encoding=%s step=%u expected=%u", encoding.c_str(),
+                    msg->step, safe.cols * (safe.channels()));
 
     pub->publish(*msg);
 }
 
-void ImageProcessor::orderPoints(vector<Point2f>& corner_pts) {
+void orderPoints(vector<Point2f>& corner_pts) {
     vector<Point2f> pts;
     for (auto& p : corner_pts)
         pts.push_back(Point2f(p.x, p.y));
@@ -86,7 +87,7 @@ void ImageProcessor::orderPoints(vector<Point2f>& corner_pts) {
     corner_pts[3] = *min_element(pts.begin(), pts.end(), min_diff);
 }
 
-int ImageProcessor::findClosestEdge(const vector<Vec4i>& lines, int starting_coor, int direction, bool vertical) {
+int findClosestEdge(const vector<Vec4i>& lines, int starting_coor, int direction, bool vertical) {
     if (lines.empty())
         return starting_coor;
 
@@ -184,9 +185,12 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
     // --------------------------------------------------------
     Mat hsv, mask;
     cvtColor(frame, hsv, COLOR_BGR2HSV);
-    saveDebug("frame", frame);
     inRange(hsv, Scalar(70, 0, 130), Scalar(130, 220, 255), mask);
-    saveDebug("mask", mask);
+
+    if (debug_) {
+        saveImage("frame", frame);
+        saveImage("mask", mask);
+    }
 
     // --------------------------------------------------------
     // 2. Find all contours and pick smallest large one
@@ -201,14 +205,16 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
         int area   = contourArea(c);
         int length = int(arcLength(c, true));
         if (area > 10000 && area < min_contour_area) {
-            RCLCPP_INFO(node_->get_logger(), "Contour found, area: %d", area);
+            if (debug_)
+                RCLCPP_INFO(node_->get_logger(), "Contour found, area: %d", area);
             min_contour_area = area;
             inner            = c;
         }
     }
 
     if (inner.empty()) {
-        RCLCPP_WARN(node_->get_logger(), "Board contour not found");
+        if (debug_)
+            RCLCPP_WARN(node_->get_logger(), "Board contour not found");
         return false;
     }
 
@@ -223,9 +229,11 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
     approxPolyDP(inner, corner_pts, 0.01 * peri, true);
 
     if (corner_pts.size() != 4) {
-        RCLCPP_WARN(node_->get_logger(), "Detected contour does not have 4 corner points, found=%zu",
-                    corner_pts.size());
-        saveDebug("corner_points", board_contour);
+        if (debug_) {
+            RCLCPP_WARN(node_->get_logger(), "Detected contour does not have 4 corner points, found=%zu",
+                        corner_pts.size());
+            saveImage("corner_points", board_contour);
+        }
         return false;
     }
 
@@ -234,8 +242,9 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
     for (auto& p : corner_pts)
         circle(board_contour, p, 5, Scalar(255, 0, 0), -1);
 
-    saveDebug("corner_points", board_contour);
-    publishDebug(pub_board_, board_contour);
+    publishImage(pub_board_, board_contour);
+    if (debug_)
+        saveImage("corner_points", board_contour);
 
     // --------------------------------------------------------
     // 4. Perspective transform
@@ -249,7 +258,9 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
     Mat warped;
     Mat m = getPerspectiveTransform(corner_pts, dst_pts);
     warpPerspective(frame, warped, m, Size(width, height));
-    saveDebug("warped", warped);
+
+    if (debug_)
+        saveImage("warped", warped);
 
     // --------------------------------------------------------
     // 5. Crop warped image
@@ -266,7 +277,9 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
     }
 
     Mat board = warped(Rect(x, y, w, h)).clone();
-    saveDebug("board", board);
+
+    if (debug_)
+        saveImage("board", board);
 
     // --------------------------------------------------------
     // 6. Use adaptive threshold and Canny to find edges
@@ -285,8 +298,10 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
 
     Mat edges;
     Canny(mask, edges, 30, 100);
-    saveDebug("edges", edges);
-    publishDebug(pub_edges_, edges);
+
+    publishImage(pub_edges_, edges);
+    if (debug_)
+        saveImage("edges", edges);
 
     // --------------------------------------------------------
     // 7. Hough lines for grid lines
@@ -320,7 +335,8 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
     for (auto& L : horizontal)
         line(line_display, Point(L[0], L[1]), Point(L[2], L[3]), Scalar(0, 255, 0), 2);
 
-    saveDebug("detected_lines", line_display);
+    if (debug_)
+        saveImage("detected_lines", line_display);
 
     // --------------------------------------------------------
     // 8. Compute grid edges
@@ -347,7 +363,8 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
     for (auto& ye : y_edges)
         line(edge_display, Point(0, ye), Point(board.cols - 1, ye), Scalar(0, 255, 0), 2);
 
-    saveDebug("detected_edges", edge_display);
+    if (debug_)
+        saveImage("detected_edges", edge_display);
 
     // --------------------------------------------------------
     // 9. Extract 9 cells
@@ -385,8 +402,10 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
                 FONT_HERSHEY_SIMPLEX, 1, Scalar(0, 255, 0), 2);
         idx++;
     }
-    saveDebug("cells", cell_display);
-    publishDebug(pub_cells_, cell_display);
+
+    publishImage(pub_cells_, cell_display);
+    if (debug_)
+        saveImage("cells", cell_display);
 
     if (cells.size() != 9) {
         cout << "Failed to extract 9 cells!" << endl;
@@ -455,7 +474,8 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
         }
 
         if (found_x) {
-            RCLCPP_INFO(node_->get_logger(), "Cell %d -- X detected", i + 1);
+            if (debug_)
+                RCLCPP_INFO(node_->get_logger(), "Cell %d -- X detected", i + 1);
             result[i] = 1;
             continue;
         }
@@ -486,7 +506,8 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
             double length = arcLength(contour, true);
             double area   = contourArea(contour);
             if (length > 200.0 && area > 200.0) {
-                RCLCPP_INFO(node_->get_logger(), "Cell %d -- contour length: %.2f area: %.2f", i + 1, length, area);
+                if (debug_)
+                    RCLCPP_INFO(node_->get_logger(), "Cell %d -- contour length: %.2f area: %.2f", i + 1, length, area);
                 filtered_circles.push_back(contour);
             }
         }
@@ -547,8 +568,10 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
             // Compute standard deviation
             double std_dev = sqrt(sum_sq_diff / dists.size());
 
-            RCLCPP_INFO(node_->get_logger(), "Cell %d -- avg_rad: %.2f, closest: %.2f, max_dev: %.2f, std_dev: %.2f",
-                        i + 1, avg_radius, closest_dist, max_dev, std_dev);
+            if (debug_)
+                RCLCPP_INFO(node_->get_logger(),
+                            "Cell %d -- avg_rad: %.2f, closest: %.2f, max_dev: %.2f, std_dev: %.2f", i + 1, avg_radius,
+                            closest_dist, max_dev, std_dev);
 
             // Check if contour meets circle criteria
             if (closest_dist > 0.1 * avg_radius && max_dev < 0.8 * avg_radius && std_dev < 0.4 * avg_radius) {
@@ -563,10 +586,13 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
                 result[i] = 0;
                 continue;
             }
-            RCLCPP_INFO(node_->get_logger(), "Cell %d -- Contour rejected, circle criteria not met", i + 1);
+
+            if (debug_)
+                RCLCPP_INFO(node_->get_logger(), "Cell %d -- Contour rejected, circle criteria not met", i + 1);
         }
 
-        RCLCPP_INFO(node_->get_logger(), "Cell %d -- Circle not detected, trying lines again", i + 1);
+        if (debug_)
+            RCLCPP_INFO(node_->get_logger(), "Cell %d -- Circle not detected, trying lines again", i + 1);
 
         // Scan through lines to see if any are at approximately 45 degree angles
         for (const auto& L : lines) {
@@ -582,8 +608,9 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
         }
     }
 
-    saveDebug("detection", board);
-    publishDebug(pub_detection_, board);
+    publishImage(pub_detection_, board);
+    if (debug_)
+        saveImage("detection", board);
 
     // Display final detected lines and circles
     for (const auto& line_data : final_lines) {
@@ -594,8 +621,9 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
                Scalar(255, 255, 0), 2);
     }
 
-    saveDebug("final_detection", final_image);
-    publishDebug(pub_final_, final_image);
+    publishImage(pub_final_, final_image);
+    if (debug_)
+        saveImage("final_detection", final_image);
 
     return true;
 }

@@ -122,31 +122,19 @@
                     <div class="card">
                         <div class="card-title image-processing-title">
                             Image Processing
-                            <div class="debug-select-row">
-                                <select v-model="selectedDebug" class="debug-select">
-                                    <option value="final">Final</option>
-                                    <option value="detection">Detection</option>
-                                    <option value="board">Board</option>
-                                    <option value="edges">Edges</option>
-                                    <option value="cells">Cells</option>
-                                </select>
-                                <button class="btn btn-refresh" @click="processBoard" title="Process Board">
-                                    <svg class="refresh-icon" width="20" height="24" viewBox="0 0 20 24" fill="none">
-                                        <path d="M10 5 a7 7 0 1 1 -7 7" stroke="#00e0ff" stroke-width="2"
-                                            stroke-linecap="round" stroke-linejoin="round" />
-                                        <polyline points="12 10 7 4 15 3" stroke="#00e0ff" stroke-width="2"
-                                            stroke-linecap="round" stroke-linejoin="round" fill="none" />
-                                    </svg>
-                                </button>
-                            </div>
+                            <select v-model="selectedImage" class="image-select">
+                                <option value="final">Final</option>
+                                <option value="detection">Detection</option>
+                                <option value="cells">Cells</option>
+                                <option value="edges">Edges</option>
+                            </select>
                         </div>
 
                         <div class="img-box img-box-3x4">
-                            <div v-show="selectedDebug==='final'" id="debugFinal" class="mjpeg-wrapper"></div>
-                            <div v-show="selectedDebug==='detection'" id="debugDetection" class="mjpeg-wrapper"></div>
-                            <div v-show="selectedDebug==='board'" id="debugBoard" class="mjpeg-wrapper"></div>
-                            <div v-show="selectedDebug==='edges'" id="debugEdges" class="mjpeg-wrapper"></div>
-                            <div v-show="selectedDebug==='cells'" id="debugCells" class="mjpeg-wrapper"></div>
+                            <div v-show="selectedImage==='final'" id="imageFinal" class="mjpeg-wrapper"></div>
+                            <div v-show="selectedImage==='detection'" id="imageDetection" class="mjpeg-wrapper"></div>
+                            <div v-show="selectedImage==='cells'" id="imageCells" class="mjpeg-wrapper"></div>
+                            <div v-show="selectedImage==='edges'" id="imageEdges" class="mjpeg-wrapper"></div>
                         </div>
                     </div>
 

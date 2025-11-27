@@ -5,7 +5,7 @@ const app = Vue.createApp({
             bridgeUrl: "ws://localhost:9090",
             videoHost: "localhost:8080",
             connected: false,
-            selectedDebug: "final",
+            selectedImage: "final",
             playerSymbol: "X",
             robotSymbol: "O",
             board: Array(9).fill(null),
@@ -23,11 +23,14 @@ const app = Vue.createApp({
     methods: {
         discoverUrls() {
             const host = window.location.hostname;
-            const pathParts = window.location.pathname.split("/").filter(x => x.length > 0);
-            const session = pathParts[0];
+            console.log("Discovered host:", host);
 
-            this.bridgeUrl = `wss://${host}/${session}/rosbridge/`;
-            this.videoHost = `${host}/${session}/cameras`;
+            if (host !== "0.0.0.0") {
+                const pathParts = window.location.pathname.split("/").filter(x => x.length > 0);
+                const session = pathParts[0];
+                this.bridgeUrl = `wss://${host}/${session}/rosbridge/`;
+                this.videoHost = `${host}/${session}/cameras`;
+            }
 
             console.log("Auto-resolved ROSBridge:", this.bridgeUrl);
             console.log("Auto-resolved video host:", this.videoHost);
@@ -45,10 +48,7 @@ const app = Vue.createApp({
                 this.connected = true;
 
                 this.startCameraStream();
-                this.startDebugStreams();
-
-                this.processBoard();
-                this.processBoard();
+                this.startImageStreams();
             });
 
             this.ros.on("error", (err) => {
@@ -79,38 +79,20 @@ const app = Vue.createApp({
             });
         },
 
-        startDebugStreams() {
+        startImageStreams() {
             console.log("Starting debug MJPEG streams...");
 
             new MJPEGCANVAS.Viewer({
-                divID: "debugBoard",
+                divID: "imageFinal",
                 host: this.videoHost,
-                topic: "/board_processor/board",
-                ssl: false,
-                width: 424,
-                height: 240,
-            });
-
-            new MJPEGCANVAS.Viewer({
-                divID: "debugEdges",
-                host: this.videoHost,
-                topic: "/board_processor/edges",
+                topic: "/board_processor/final",
                 ssl: false,
                 width: 810,
                 height: 1067,
             });
 
             new MJPEGCANVAS.Viewer({
-                divID: "debugCells",
-                host: this.videoHost,
-                topic: "/board_processor/cells",
-                ssl: false,
-                width: 810,
-                height: 1067,
-            });
-
-            new MJPEGCANVAS.Viewer({
-                divID: "debugDetection",
+                divID: "imageDetection",
                 host: this.videoHost,
                 topic: "/board_processor/detection",
                 ssl: false,
@@ -119,9 +101,18 @@ const app = Vue.createApp({
             });
 
             new MJPEGCANVAS.Viewer({
-                divID: "debugFinal",
+                divID: "imageCells",
                 host: this.videoHost,
-                topic: "/board_processor/final",
+                topic: "/board_processor/cells",
+                ssl: false,
+                width: 810,
+                height: 1067,
+            });
+
+            new MJPEGCANVAS.Viewer({
+                divID: "imageEdges",
+                host: this.videoHost,
+                topic: "/board_processor/edges",
                 ssl: false,
                 width: 810,
                 height: 1067,
@@ -136,36 +127,6 @@ const app = Vue.createApp({
         endGame() {
             this.clearBoard();
             this.gameStarted = false;
-        },
-
-        processBoard() {
-            const service = new ROSLIB.Service({
-                ros: this.ros,
-                name: "/process_board",
-                serviceType: "board_perception/srv/ProcessBoard"
-            });
-
-            const request = new ROSLIB.ServiceRequest({});
-            console.log("Calling /process_board");
-
-            service.callService(request, (result) => {
-                console.log("Service response:", result);
-                if (result && result.success) {
-                    this.gridDetected = true;
-                    this.gameStarted = true;
-
-                    // Update board controls with current board state
-                    for (let i = 0; i < 9; i++) {
-                        if (result.board[i] === 0) {
-                            this.board[i] = "O";
-                        } else if (result.board[i] === 1) {
-                            this.board[i] = "X";
-                        } else {
-                            this.board[i] = null;
-                        }
-                    }
-                }
-            });
         },
 
         moveRequest(mode, symbol, cell_number) {
