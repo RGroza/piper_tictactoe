@@ -14,15 +14,15 @@ using namespace std::chrono_literals;
 using Pose = geometry_msgs::msg::Pose;
 
 namespace {
-constexpr float HOVERING_Z    = 0.204f;
+constexpr float HOVERING_Z    = 0.205f;
 constexpr float DRAW_Z_OFFSET = 0.005f;
 constexpr float GRID_SIZE     = 0.045f;
 constexpr float CROSS_WIDTH   = 0.025f;
 constexpr float CIRCLE_RADIUS = 0.015f;
 constexpr float GRID_X_OFFSET = 0.027f;
 constexpr float GRID_Y_OFFSET = -0.02f;
-constexpr float BOARD_WIDTH   = 0.100f;
-constexpr float BOARD_HEIGHT  = 0.100f;
+constexpr float BOARD_WIDTH   = 0.140f;
+constexpr float BOARD_HEIGHT  = 0.140f;
 } // namespace
 
 TrajectoryExecutor::TrajectoryExecutor(rclcpp::Node::SharedPtr base_node) : base_node_(std::move(base_node)) {
@@ -88,8 +88,8 @@ void TrajectoryExecutor::loadWaypoints() {
     waypoints_.push_back(makePose(0.200f + GRID_X_OFFSET, 0.065f + GRID_Y_OFFSET, HOVERING_Z));
     waypoints_.push_back(makePose(0.155f + GRID_X_OFFSET, 0.065f + GRID_Y_OFFSET, HOVERING_Z));
 
-    board_center_       = makePose(0.200f, 0.020f, HOVERING_Z);
-    board_image_corner_ = makePose(0.200f - (BOARD_WIDTH / 2.0f), 0.020f - (BOARD_HEIGHT / 2.0f), HOVERING_Z);
+    board_center_       = makePose(0.200f + GRID_X_OFFSET, 0.020f + GRID_Y_OFFSET, HOVERING_Z);
+    board_image_corner_ = makePose(0.200f + GRID_X_OFFSET - (BOARD_WIDTH / 2.0f), 0.020f - (BOARD_HEIGHT / 2.0f) + GRID_Y_OFFSET, HOVERING_Z);
 }
 
 // --------------------------------------------------

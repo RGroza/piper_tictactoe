@@ -43,7 +43,7 @@ class ContourPlannerNode : public rclcpp::Node {
         std::vector<std::vector<cv::Point>> contours = process_image(image_path, output_csv);
 
         // Call service for each contour
-        // call_execute_trajectory_for_contours(contours);
+        call_execute_trajectory_for_contours(contours);
     }
 
   private:
