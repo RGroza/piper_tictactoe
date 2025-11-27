@@ -116,13 +116,17 @@ int ImageProcessor::findClosestEdge(const vector<Vec4i>& lines, int starting_coo
     }
 
     // Add small cropping factor to avoid including grid lines
-    return closest + 0.02 * (starting_coor - closest);
+    return closest + 0.05 * (starting_coor - closest);
 }
 
-inline double lineLength(const cv::Vec4i& l) {
+double lineLength(const cv::Vec4i& l) {
     int dx = l[2] - l[0];
     int dy = l[3] - l[1];
     return std::sqrt(dx * dx + dy * dy);
+}
+
+double lineAngle(const cv::Vec4i& l) {
+    return atan2(double(l[3] - l[1]), double(l[2] - l[0])) * 180.0 / CV_PI;
 }
 
 int orientation(cv::Point2f p, cv::Point2f q, cv::Point2f r) {
@@ -138,6 +142,15 @@ bool onSegment(cv::Point2f p, cv::Point2f q, cv::Point2f r) {
 }
 
 bool doIntersect(cv::Point2f p1, cv::Point2f q1, cv::Point2f p2, cv::Point2f q2) {
+    // Shorten line slightly at each end to avoid edge cases
+    float shorten_factor = 0.05f;
+    cv::Point2f dir1     = q1 - p1;
+    cv::Point2f dir2     = q2 - p2;
+    p1 += shorten_factor * dir1;
+    q1 -= shorten_factor * dir1;
+    p2 += shorten_factor * dir2;
+    q2 -= shorten_factor * dir2;
+
     int o1 = orientation(p1, q1, p2);
     int o2 = orientation(p1, q1, q2);
     int o3 = orientation(p2, q2, p1);
@@ -147,7 +160,7 @@ bool doIntersect(cv::Point2f p1, cv::Point2f q1, cv::Point2f p2, cv::Point2f q2)
     if (o1 != o2 && o3 != o4)
         return true;
 
-    // Special Cases
+    // Special cases
     if (o1 == 0 && onSegment(p1, p2, q1))
         return true;
     if (o2 == 0 && onSegment(p1, q2, q1))
@@ -390,12 +403,6 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
         array<int, 4> corners = cell_corners[i];
         Rect cell_rect(corners[0], corners[1], corners[2] - corners[0], corners[3] - corners[1]);
 
-        if (cell_rect.x < 0 || cell_rect.y < 0 || cell_rect.x + cell_rect.width > edges.cols ||
-            cell_rect.y + cell_rect.height > edges.rows) {
-            cout << "Cell rect out of bounds for cell " << i << endl;
-            continue;
-        }
-
         // --------------------------------------------------------
         // Detect Xs
         // --------------------------------------------------------
@@ -413,9 +420,9 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
         // Find two lines that intersect at ~90 degrees
         bool found_x = false;
         for (size_t m = 0; m < lines.size(); ++m) {
-            double angle1 = atan2(lines[m][3] - lines[m][1], lines[m][2] - lines[m][0]) * 180.0 / CV_PI;
+            double angle1 = lineAngle(lines[m]);
             for (size_t n = m + 1; n < lines.size(); ++n) {
-                double angle2 = atan2(lines[n][3] - lines[n][1], lines[n][2] - lines[n][0]) * 180.0 / CV_PI;
+                double angle2 = lineAngle(lines[n]);
                 double diff   = fabs(angle1 - angle2);
 
                 if (diff > 90)
@@ -432,8 +439,10 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
                                              lines[m][2] + corners[0], lines[m][3] + corners[1]};
                         Vec4i final_line2 = {lines[n][0] + corners[0], lines[n][1] + corners[1],
                                              lines[n][2] + corners[0], lines[n][3] + corners[1]};
+
                         final_lines.push_back(final_line1);
                         final_lines.push_back(final_line2);
+
                         found_x = true;
                         break;
                     }
@@ -444,6 +453,7 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
         }
 
         if (found_x) {
+            RCLCPP_INFO(node_->get_logger(), "Cell %d -- X detected", i + 1);
             result[i] = 1;
             continue;
         }
@@ -474,48 +484,100 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
             double length = arcLength(contour, true);
             double area   = contourArea(contour);
             if (length > 200.0 && area > 200.0) {
-                RCLCPP_INFO(node_->get_logger(), "Cell %d contour length: %.2f area: %.2f", i + 1, length, area);
+                RCLCPP_INFO(node_->get_logger(), "Cell %d -- contour length: %.2f area: %.2f", i + 1, length, area);
                 filtered_circles.push_back(contour);
             }
         }
 
-        if (filtered_circles.empty()) {
-            RCLCPP_INFO(node_->get_logger(), "No circle-like contours found in cell %d", i + 1);
-            result[i] = -1;
-            continue;
+        if (!filtered_circles.empty()) {
+            // Find the contour with the largest area
+            double max_area = 0.0;
+            std::vector<Point> largest_contour;
+            for (const auto& contour : filtered_circles) {
+                double area = contourArea(contour);
+                if (area > max_area) {
+                    max_area        = area;
+                    largest_contour = contour;
+                }
+            }
+
+            // Draw contours in green on board image
+            for (auto& contour : filtered_circles) {
+                drawContours(board, vector<vector<Point>>{contour}, -1, Scalar(0, 150, 0), 2, LINE_AA, noArray(), 0,
+                             Point(corners[0], corners[1]));
+            }
+
+            // Highlight the largest contour in red
+            drawContours(board, vector<vector<Point>>{largest_contour}, -1, Scalar(0, 0, 255), 2, LINE_AA, noArray(), 0,
+                         Point(corners[0], corners[1]));
+
+            // Find approximate center of the largest contour
+            Moments mu        = moments(largest_contour);
+            Point2f center_pt = Point2f(float(mu.m10 / mu.m00), float(mu.m01 / mu.m00));
+            // Draw center point
+            circle(board, center_pt + Point2f(corners[0], corners[1]), 3, Scalar(255, 0, 255), -1);
+
+            // Compute average radius
+            double avg_radius = 0.0;
+            vector<double> dists;
+            for (const auto& pt : largest_contour) {
+                double dist = norm(Point2f(pt.x, pt.y) - center_pt);
+                dists.push_back(dist);
+                avg_radius += dist;
+            }
+            avg_radius /= dists.size();
+
+            // Compute metrics: closest distance, max deviation, standard deviation
+            double closest_dist = numeric_limits<double>::max();
+            double max_dev      = 0.0;
+            double sum_sq_diff  = 0.0;
+            for (const auto& dist : dists) {
+                // Compute closest distance to center
+                if (dist < closest_dist)
+                    closest_dist = dist;
+                // Compute max deviation from average radius
+                double dev = fabs(dist - avg_radius);
+                if (dev > max_dev)
+                    max_dev = dev;
+                // Squared differences
+                sum_sq_diff += dev * dev;
+            }
+            // Compute standard deviation
+            double std_dev = sqrt(sum_sq_diff / dists.size());
+
+            RCLCPP_INFO(node_->get_logger(), "Cell %d -- avg_rad: %.2f, closest: %.2f, max_dev: %.2f, std_dev: %.2f",
+                        i + 1, avg_radius, closest_dist, max_dev, std_dev);
+
+            // Check if contour meets circle criteria
+            if (closest_dist > 0.1 * avg_radius && max_dev < 0.8 * avg_radius && std_dev < 0.4 * avg_radius) {
+                // Fit circle to largest contour
+                Point2f center;
+                float radius;
+                minEnclosingCircle(largest_contour, center, radius);
+                // Save circle to be drawn later
+                center += Point2f(corners[0], corners[1]);
+                final_circles.push_back({center, radius});
+                // Accept as circle
+                result[i] = 0;
+                continue;
+            }
+            RCLCPP_INFO(node_->get_logger(), "Cell %d -- Contour rejected, circle criteria not met", i + 1);
         }
 
-        result[i] = 0;
+        RCLCPP_INFO(node_->get_logger(), "Cell %d -- Circle not detected, trying lines again", i + 1);
 
-        // Find the contour with the largest area
-        double max_area = 0.0;
-        std::vector<Point> largest_contour;
-        for (const auto& contour : filtered_circles) {
-            double area = contourArea(contour);
-            if (area > max_area) {
-                max_area        = area;
-                largest_contour = contour;
+        // Scan through lines to see if any are at approximately 45 degree angles
+        for (const auto& L : lines) {
+            double angle_abs = abs(lineAngle(L));
+            if (angle_abs > 30 && angle_abs < 60 || angle_abs > 120 && angle_abs < 150) {
+                // Accept line as part of X
+                result[i] = 1;
+                // Save line to be drawn later
+                Vec4i final_line = {L[0] + corners[0], L[1] + corners[1], L[2] + corners[0], L[3] + corners[1]};
+                final_lines.push_back(final_line);
+                break;
             }
         }
-
-        for (auto& contour : filtered_circles) {
-            // Draw contour in green on board image
-            drawContours(board, vector<vector<Point>>{contour}, -1, Scalar(0, 150, 0), 2, LINE_AA, noArray(), 0,
-                         Point(corners[0], corners[1]));
-        }
-
-        // Highlight the largest contour in red
-        drawContours(board, vector<vector<Point>>{largest_contour}, -1, Scalar(0, 0, 255), 2, LINE_AA, noArray(), 0,
-                     Point(corners[0], corners[1]));
-
-        // Fit circle to largest contour
-        Point2f center;
-        float radius;
-        minEnclosingCircle(largest_contour, center, radius);
-
-        // Save circle to be drawn later
-        center += Point2f(corners[0], corners[1]);
-        final_circles.push_back({center, radius});
     }
 
     saveDebug("detection", board);
