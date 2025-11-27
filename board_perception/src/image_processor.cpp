@@ -14,8 +14,8 @@ constexpr float BOARD_ASPECT_RATIO = BOARD_HEIGHT / BOARD_WIDTH;
 } // namespace
 
 ImageProcessor::ImageProcessor(rclcpp::Node* node, bool debug) : node_(node), debug_(debug) {
-    debug_output_dir_ = "/home/user/ros2_ws/src/piper_tictactoe/board_perception/debug";
-    // debug_output_dir_ = "/home/robert/ROS/Final/ros2_ws/src/tictactoe/board_perception/debug";
+    // debug_output_dir_ = "/home/user/ros2_ws/src/piper_tictactoe/board_perception/debug";
+    debug_output_dir_ = "/home/robert/ROS/Final/ros2_ws/src/tictactoe/board_perception/debug";
 
     if (debug_) {
         auto qos       = rclcpp::QoS(rclcpp::KeepLast(5)).reliable().transient_local();
@@ -185,7 +185,7 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
     Mat hsv, mask;
     cvtColor(frame, hsv, COLOR_BGR2HSV);
     saveDebug("frame", frame);
-    inRange(hsv, Scalar(70, 130, 130), Scalar(130, 220, 255), mask);
+    inRange(hsv, Scalar(70, 0, 130), Scalar(130, 220, 255), mask);
     saveDebug("mask", mask);
 
     // --------------------------------------------------------
@@ -200,15 +200,15 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
     for (auto& c : contours) {
         int area   = contourArea(c);
         int length = int(arcLength(c, true));
-        RCLCPP_INFO(node_->get_logger(), "Found contour with area, length: %d, %d", area, length);
         if (area > 10000 && area < min_contour_area) {
-            RCLCPP_INFO(node_->get_logger(), "Contour area: %d", area);
+            RCLCPP_INFO(node_->get_logger(), "Contour found, area: %d", area);
             min_contour_area = area;
             inner            = c;
         }
     }
 
     if (inner.empty()) {
+        RCLCPP_WARN(node_->get_logger(), "Board contour not found");
         return false;
     }
 
@@ -223,6 +223,8 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
     approxPolyDP(inner, corner_pts, 0.01 * peri, true);
 
     if (corner_pts.size() != 4) {
+        RCLCPP_WARN(node_->get_logger(), "Detected contour does not have 4 corner points, found=%zu",
+                    corner_pts.size());
         saveDebug("corner_points", board_contour);
         return false;
     }
@@ -409,7 +411,7 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
         // Detect add lines using Hough lines
         Mat cell_edges = edges(cell_rect).clone();
         vector<Vec4i> lines;
-        HoughLinesP(cell_edges, lines, 1, CV_PI / 180, 20, 0.1 * BOARD_IMAGE_WIDTH, 0.05 * BOARD_IMAGE_WIDTH);
+        HoughLinesP(cell_edges, lines, 1, CV_PI / 180, 40, 0.1 * BOARD_IMAGE_WIDTH, 0.05 * BOARD_IMAGE_WIDTH);
 
         // Display detected lines for debugging
         for (auto& L : lines) {
