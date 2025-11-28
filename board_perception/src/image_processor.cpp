@@ -124,7 +124,7 @@ int findClosestEdge(const vector<Vec4i>& lines, int starting_coor, int direction
     }
 
     // Add small cropping factor to avoid including grid lines
-    return closest + 0.05 * (starting_coor - closest);
+    return closest + 0.1 * (starting_coor - closest);
 }
 
 double lineLength(const cv::Vec4i& l) {
@@ -492,7 +492,7 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
         // --------------------------------------------------------
         // Dilate then erode (closing) to connect gaps
         Mat morph;
-        int morph_size = 2;
+        int morph_size = 10;
         Mat kernel     = getStructuringElement(MORPH_ELLIPSE, Size(2 * morph_size + 1, 2 * morph_size + 1));
         morphologyEx(cell_edges, morph, MORPH_CLOSE, kernel);
 
@@ -520,14 +520,14 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
         }
 
         if (!filtered_circles.empty()) {
-            // Find the contour with the largest area
-            double max_area = 0.0;
-            std::vector<Point> largest_contour;
+            // Find the contour with the longest length
+            double max_length = 0.0;
+            std::vector<Point> longest_contour;
             for (const auto& contour : filtered_circles) {
-                double area = contourArea(contour);
-                if (area > max_area) {
-                    max_area        = area;
-                    largest_contour = contour;
+                double length = arcLength(contour, true);
+                if (length > max_length) {
+                    max_length      = length;
+                    longest_contour = contour;
                 }
             }
 
@@ -538,11 +538,11 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
             }
 
             // Highlight the largest contour in red
-            drawContours(board, vector<vector<Point>>{largest_contour}, -1, Scalar(0, 0, 255), 2, LINE_AA, noArray(), 0,
+            drawContours(board, vector<vector<Point>>{longest_contour}, -1, Scalar(0, 0, 255), 2, LINE_AA, noArray(), 0,
                          Point(corners[0], corners[1]));
 
             // Find approximate center of the largest contour
-            Moments mu        = moments(largest_contour);
+            Moments mu        = moments(longest_contour);
             Point2f center_pt = Point2f(float(mu.m10 / mu.m00), float(mu.m01 / mu.m00));
             // Draw center point
             circle(board, center_pt + Point2f(corners[0], corners[1]), 3, Scalar(255, 0, 255), -1);
@@ -550,7 +550,7 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
             // Compute average radius
             double avg_radius = 0.0;
             vector<double> dists;
-            for (const auto& pt : largest_contour) {
+            for (const auto& pt : longest_contour) {
                 double dist = norm(Point2f(pt.x, pt.y) - center_pt);
                 dists.push_back(dist);
                 avg_radius += dist;
@@ -585,7 +585,7 @@ bool ImageProcessor::process(const cv::Mat& frame, array<int, 9>& result) {
                 // Fit circle to largest contour
                 Point2f center;
                 float radius;
-                minEnclosingCircle(largest_contour, center, radius);
+                minEnclosingCircle(longest_contour, center, radius);
                 // Save circle to be drawn later
                 center += Point2f(corners[0], corners[1]);
                 final_circles.push_back({center, radius});

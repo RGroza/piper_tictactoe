@@ -10,6 +10,11 @@ BoardProcessorServer::BoardProcessorServer() : Node("ttt_board_processor_server"
         processor_.enableDebug();
     }
 
+    bool debug_images = this->declare_parameter<bool>("debug_images", false);
+    if (debug_images) {
+        processor_.enableSaveDebugImages();
+    }
+
     image_name_ = this->declare_parameter<std::string>("image_name", "");
 
     if (!image_name_.empty()) {
