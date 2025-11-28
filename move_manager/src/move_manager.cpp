@@ -41,6 +41,7 @@ class MoveManager : public rclcpp::Node {
 
         auto_robot_move_ = true;
         robot_moving_    = false;
+        robot_turn_      = false;
     }
 
   private:
@@ -76,7 +77,7 @@ class MoveManager : public rclcpp::Node {
         board_state_received_ = true;
 
         // Auto-play robot move if it's robot's turn
-        if (auto_robot_move_) {
+        if (auto_robot_move_ && !robot_moving_ && robot_turn_) {
             RCLCPP_INFO(get_logger(), "Playing robot move automatically");
             pair<bool, string> robot_move_result = robotMove();
             if (robot_move_result.first == false) {
@@ -133,6 +134,11 @@ class MoveManager : public rclcpp::Node {
                 serviceFailure(response, validateResult.second);
                 return;
             }
+            // Ensure it's human's turn
+            if (robot_turn_) {
+                serviceFailure(response, "It's not human's turn to move");
+                return;
+            }
 
             // Execute human move
             RCLCPP_INFO(get_logger(), "Human move on cell %d", cell);
@@ -142,7 +148,15 @@ class MoveManager : public rclcpp::Node {
                 serviceFailure(response, result.second);
                 return;
             }
+
+            robot_turn_ = true;
         } else {
+            // Ensure it's robot's turn
+            if (!robot_turn_) {
+                serviceFailure(response, "It's not robot's turn to move");
+                return;
+            }
+
             // Handle robot move
             auto result = robotMove();
 
@@ -165,6 +179,8 @@ class MoveManager : public rclcpp::Node {
     }
 
     pair<bool, string> moveRequest(int symbol, int cell) {
+        robot_moving_ = true;
+
         // Prepare and send trajectory execution request
         auto trajectory_request         = std::make_shared<piper_trajectory::srv::ExecuteTrajectory::Request>();
         trajectory_request->type        = symbol;
@@ -187,7 +203,6 @@ class MoveManager : public rclcpp::Node {
     }
 
     pair<bool, string> robotMove() {
-        robot_moving_                     = true;
         pair<bool, string> validateResult = validateBoard(robot_symbol_);
         if (validateResult.first == false)
             return {false, validateResult.second};
@@ -199,6 +214,7 @@ class MoveManager : public rclcpp::Node {
 
         RCLCPP_INFO(this->get_logger(), "Robot best move on cell %d", cell);
 
+        robot_turn_ = false;
         return moveRequest(robot_symbol_, cell);
     }
 
@@ -406,6 +422,7 @@ class MoveManager : public rclcpp::Node {
     bool board_state_received_;
     bool auto_robot_move_;
     bool robot_moving_;
+    bool robot_turn_;
     int robot_symbol_;
 };
 
