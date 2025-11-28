@@ -32,6 +32,8 @@ class MoveManager : public rclcpp::Node {
         robot_symbol_ = this->get_parameter("robot_symbol").as_int();
         this->declare_parameter<bool>("auto_robot_move", true);
         auto_robot_move_ = this->get_parameter("auto_robot_move").as_bool();
+        this->declare_parameter<bool>("game_started", true);
+        game_started_ = this->get_parameter("game_started").as_bool();
 
         param_callback_handle_ =
             this->add_on_set_parameters_callback(std::bind(&MoveManager::onSetParameters, this, std::placeholders::_1));
@@ -50,7 +52,7 @@ class MoveManager : public rclcpp::Node {
             RCLCPP_WARN(get_logger(), "Received board state of invalid size");
             return;
         }
-        if (msg->success == false) {
+        if (!msg->success) {
             return;
         }
 
@@ -257,6 +259,12 @@ class MoveManager : public rclcpp::Node {
                 auto_robot_move_ = param.as_bool();
                 RCLCPP_INFO(this->get_logger(), "auto_robot_move updated to %s", auto_robot_move_ ? "true" : "false");
             }
+            if (param.get_name() == "game_started") {
+                game_started_ = param.as_bool();
+                RCLCPP_INFO(this->get_logger(), "game_started updated to %s", game_started_ ? "true" : "false");
+                if (robot_symbol_ == 1 && game_started_)
+                    robot_turn_ = true; // If robot is 'X' and game starts, it's robot's turn
+            }
         }
         return result;
     }
@@ -423,6 +431,7 @@ class MoveManager : public rclcpp::Node {
     bool auto_robot_move_;
     bool robot_moving_;
     bool robot_turn_;
+    bool game_started_;
     int robot_symbol_;
 };
 

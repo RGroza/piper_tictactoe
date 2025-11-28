@@ -144,6 +144,7 @@ const app = Vue.createApp({
 
             service.callService(request, (result) => {
                 console.log("Service response:", result);
+                this.setGameStarted(true);
             });
         },
 
@@ -166,6 +167,7 @@ const app = Vue.createApp({
                 this.boardDetected = false;
                 this.winLine = null;
                 this.isDraw = false;
+                this.setGameStarted(false);
             });
         },
 
@@ -238,6 +240,27 @@ const app = Vue.createApp({
                     {
                         name: 'auto_robot_move',
                         value: { type: 1, bool_value: this.autoRobotMove }
+                    }
+                ]
+            });
+
+            service.callService(request, (result) => {
+                console.log('Set parameter result:', result);
+            });
+        },
+
+        setGameStarted(gameStarted) {
+            const service = new ROSLIB.Service({
+                ros: this.ros,
+                name: '/ttt_manager/set_parameters',
+                serviceType: 'rcl_interfaces/srv/SetParameters'
+            });
+
+            const request = new ROSLIB.ServiceRequest({
+                parameters: [
+                    {
+                        name: 'game_started',
+                        value: { type: 1, bool_value: gameStarted }
                     }
                 ]
             });
