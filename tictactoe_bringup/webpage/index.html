@@ -53,11 +53,10 @@
 
                                 <!-- 9 clickable cells -->
                                 <div v-for="n in 9" :key="n" class="cell-btn"
-                                    :class="{ played: board[n-1] !== null && board[n-1] !== -1 }"
-                                    @click="(board[n-1] === null || board[n-1] === -1) && !winLine && playerMove(n)"
+                                    :class="{ played: board[n-1] !== -1 || winLine }"
+                                    @click="board[n-1] === -1 && !winLine && playerMove(n)"
                                     style="cursor: pointer; user-select: none;">
-                                    <span v-if="board[n-1] !== null && board[n-1] !== -1 || winLine"
-                                        class="cell-symbol">
+                                    <span v-if="board[n-1] !== -1" class="cell-symbol">
                                         <template v-if="board[n-1] === 1">
                                             <svg viewBox="0 0 100 100" class="cell-svg">
                                                 <line x1="20" y1="20" x2="80" y2="80" stroke="#00e0ff" stroke-width="10"
@@ -72,11 +71,8 @@
                                                     fill="none" />
                                             </svg>
                                         </template>
-                                        <template v-else>
-                                            <svg viewBox="0 0 100 100" class="cell-svg"></svg>
-                                        </template>
                                     </span>
-                                    <span v-else>{{ n }}</span>
+                                    <span v-else-if="!winLine">{{ n }}</span>
                                 </div>
 
                                 <!-- Winning line overlay -->
@@ -98,31 +94,54 @@
 
                         <div class="card">
                             <!-- <div class="card-title" style="margin-top:8px;">Robot Commands</div> -->
-                            <div class="controls-row">
-                                <div class="symbol-col">
-                                    <div class="symbol-row">
-                                        <label>Player:</label>
-                                        <select v-model.number="playerSymbol" @change="playerChanged">
-                                            <option :value="1">X</option>
-                                            <option :value="0">O</option>
-                                        </select>
+                            <div class="controls-col">
+                                <div class="controls-row">
+                                    <div class="controls-col">
+                                        <div class="controls-row">
+                                            Symbol Selection:
+                                        </div>
+                                        <div class="symbol-row">
+                                            <label>Player:</label>
+                                            <select v-model.number="playerSymbol" @change="playerChanged">
+                                                <option :value="1">X</option>
+                                                <option :value="0">O</option>
+                                            </select>
+                                            <label>Robot:</label>
+                                            <select v-model.number="robotSymbol" @change="robotChanged">
+                                                <option :value="1">X</option>
+                                                <option :value="0">O</option>
+                                            </select>
+                                        </div>
                                     </div>
-                                    <div class="symbol-row">
-                                        <label>Robot:</label>
-                                        <select v-model.number="robotSymbol" @change="robotChanged">
-                                            <option :value="1">X</option>
-                                            <option :value="0">O</option>
-                                        </select>
+
+                                    <div class="controls-col">
+                                        <div class="buttons-row">
+                                            <button class="btn" @click="startGame" v-if="!boardDetected">Start
+                                                Game</button>
+                                            <button class="btn" @click="endGame" v-if="boardDetected">End Game</button>
+                                            <button class="btn" @click="robotMove" :disabled="autoRobotMove">Robot
+                                                Move</button>
+                                        </div>
+
+                                        <div class="controls-row">
+                                            <label>Auto Robot Move:</label>
+                                            <input type="checkbox" v-model="autoRobotMove"
+                                                @change="updateAutoRobotMove">
+                                        </div>
                                     </div>
                                 </div>
 
-                                <button class="btn" @click="startGame" v-if="!boardDetected">Start Game</button>
-                                <button class="btn" @click="endGame" v-if="boardDetected">End Game</button>
-                                <button class="btn" @click="robotMove">Robot Move</button>
+                                <div class="controls-row" v-if="winLine || isDraw">
+                                    <div v-if="winLine" class="end-game-msg">
+                                        <span v-if="board[winLine.from] === playerSymbol">Player </span>
+                                        <span v-else>Robot </span>
+                                        wins!
+                                    </div>
+                                    <div v-else-if="isDraw" class="end-game-msg">It's a draw!</div>
+                                </div>
                             </div>
                         </div>
                     </div>
-
                     <!-- Right column — Image Processing -->
                     <div class="card">
                         <div class="card-title image-processing-title">

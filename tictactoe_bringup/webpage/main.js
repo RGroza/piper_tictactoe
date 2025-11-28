@@ -8,10 +8,11 @@ const app = Vue.createApp({
             selectedImage: "final",
             playerSymbol: 1,
             robotSymbol: 0,
-            board: Array(9).fill(null),
+            autoRobotMove: true,
+            board: Array(9).fill(-1),
             boardDetected: false,
             winLine: null, // {from: idx1, to: idx2}
-            gameStarted: false,
+            isDraw: false,
             boardStateTopic: null,
             gameResultTopic: null,
         };
@@ -129,13 +130,43 @@ const app = Vue.createApp({
         },
 
         startGame() {
-            this.drawGrid();
-            this.gameStarted = true;
+            const service = new ROSLIB.Service({
+                ros: this.ros,
+                name: "/execute_trajectory",
+                serviceType: "execute_trajectory/srv/ExecuteTrajectory"
+            });
+
+            const request = new ROSLIB.ServiceRequest({});
+            request.type = 2;
+            request.return_home = true;
+
+            console.log("Calling /execute_trajectory to draw grid");
+
+            service.callService(request, (result) => {
+                console.log("Service response:", result);
+            });
         },
 
         endGame() {
-            this.clearBoard();
-            this.gameStarted = false;
+            const service = new ROSLIB.Service({
+                ros: this.ros,
+                name: "/execute_trajectory",
+                serviceType: "execute_trajectory/srv/ExecuteTrajectory"
+            });
+
+            const request = new ROSLIB.ServiceRequest({});
+            request.type = 3;
+            request.return_home = true;
+
+            console.log("Calling /execute_trajectory to clear board");
+
+            service.callService(request, (result) => {
+                console.log("Service response:", result);
+                this.board = Array(9).fill(-1);
+                this.boardDetected = false;
+                this.winLine = null;
+                this.isDraw = false;
+            });
         },
 
         moveRequest(mode, symbol, cell_number) {
@@ -165,44 +196,6 @@ const app = Vue.createApp({
             this.moveRequest(1, this.robotSymbol, 0);
         },
 
-        drawGrid() {
-            const service = new ROSLIB.Service({
-                ros: this.ros,
-                name: "/execute_trajectory",
-                serviceType: "execute_trajectory/srv/ExecuteTrajectory"
-            });
-
-            const request = new ROSLIB.ServiceRequest({});
-            request.type = 2;
-            request.return_home = true;
-
-            console.log("Calling /execute_trajectory to draw grid");
-
-            service.callService(request, (result) => {
-                console.log("Service response:", result);
-            });
-        },
-
-        clearBoard() {
-            const service = new ROSLIB.Service({
-                ros: this.ros,
-                name: "/execute_trajectory",
-                serviceType: "execute_trajectory/srv/ExecuteTrajectory"
-            });
-
-            const request = new ROSLIB.ServiceRequest({});
-            request.type = 3;
-            request.return_home = true;
-
-            console.log("Calling /execute_trajectory to clear board");
-
-            service.callService(request, (result) => {
-                console.log("Service response:", result);
-                this.boardDetected = false;
-                this.winLine = null;
-            });
-        },
-
         playerChanged() {
             this.robotSymbol = this.playerSymbol === 1 ? 0 : 1;
             this.updateRobotSymbol();
@@ -219,14 +212,32 @@ const app = Vue.createApp({
                 name: '/ttt_manager/set_parameters',
                 serviceType: 'rcl_interfaces/srv/SetParameters'
             });
-
-            let val = this.robotSymbol;
-
             const request = new ROSLIB.ServiceRequest({
                 parameters: [
                     {
                         name: 'robot_symbol',
-                        value: { type: 2, integer_value: val }
+                        value: { type: 2, integer_value: this.robotSymbol }
+                    }
+                ]
+            });
+
+            service.callService(request, (result) => {
+                console.log('Set parameter result:', result);
+            });
+        },
+
+        updateAutoRobotMove() {
+            const service = new ROSLIB.Service({
+                ros: this.ros,
+                name: '/ttt_manager/set_parameters',
+                serviceType: 'rcl_interfaces/srv/SetParameters'
+            });
+
+            const request = new ROSLIB.ServiceRequest({
+                parameters: [
+                    {
+                        name: 'auto_robot_move',
+                        value: { type: 1, bool_value: this.autoRobotMove }
                     }
                 ]
             });
@@ -268,8 +279,12 @@ const app = Vue.createApp({
             });
 
             this.gameResultTopic.subscribe((msg) => {
-                if (msg.game_over && msg.winner !== -1) {
-                    this.winLine = { from: msg.winner_start_cell, to: msg.winner_end_cell };
+                if (msg.game_over) {
+                    if (msg.winner !== -1) {
+                        this.winLine = { from: msg.winner_start_cell, to: msg.winner_end_cell };
+                    } else {
+                        this.isDraw = true;
+                    }
                 }
             });
         },

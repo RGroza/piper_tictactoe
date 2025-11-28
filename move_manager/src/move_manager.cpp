@@ -30,6 +30,8 @@ class MoveManager : public rclcpp::Node {
 
         this->declare_parameter<int>("robot_symbol", 0); // 0 for 'O', 1 for 'X'
         robot_symbol_ = this->get_parameter("robot_symbol").as_int();
+        this->declare_parameter<bool>("auto_robot_move", true);
+        auto_robot_move_ = this->get_parameter("auto_robot_move").as_bool();
 
         param_callback_handle_ =
             this->add_on_set_parameters_callback(std::bind(&MoveManager::onSetParameters, this, std::placeholders::_1));
@@ -76,8 +78,9 @@ class MoveManager : public rclcpp::Node {
         // Auto-play robot move if it's robot's turn
         if (auto_robot_move_) {
             RCLCPP_INFO(get_logger(), "Playing robot move automatically");
-            if (robotMove().first == false) {
-                RCLCPP_ERROR(get_logger(), "Robot move failed -- %s", robotMove().second.c_str());
+            pair<bool, string> robot_move_result = robotMove();
+            if (robot_move_result.first == false) {
+                RCLCPP_WARN(get_logger(), "Robot move failed -- %s", robot_move_result.second.c_str());
             }
         }
 
@@ -233,6 +236,10 @@ class MoveManager : public rclcpp::Node {
                     result.successful = false;
                     result.reason     = "robot_symbol must be 0 or 1";
                 }
+            }
+            if (param.get_name() == "auto_robot_move") {
+                auto_robot_move_ = param.as_bool();
+                RCLCPP_INFO(this->get_logger(), "auto_robot_move updated to %s", auto_robot_move_ ? "true" : "false");
             }
         }
         return result;
