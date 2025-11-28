@@ -11,10 +11,12 @@ class ImageProcessor {
     ImageProcessor(rclcpp::Node* node);
     bool process(const cv::Mat& frame, std::array<int, 9>& result);
     void enableDebug();
+    void enableSaveDebugImages();
 
   private:
     rclcpp::Node* node_;
     bool debug_;
+    bool save_debug_images_;
     std::string debug_output_dir_;
 
     void saveImage(const std::string& name, const cv::Mat& img);

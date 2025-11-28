@@ -23,14 +23,21 @@ ImageProcessor::ImageProcessor(rclcpp::Node* node) : node_(node) {
     pub_cells_     = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/cells", qos);
     pub_detection_ = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/detection", qos);
     pub_final_     = node_->create_publisher<sensor_msgs::msg::Image>("/board_processor/final", qos);
+
+    debug_             = false;
+    save_debug_images_ = false;
 }
 
 void ImageProcessor::enableDebug() {
     debug_ = true;
 }
 
+void ImageProcessor::enableSaveDebugImages() {
+    save_debug_images_ = true;
+}
+
 void ImageProcessor::saveImage(const string& name, const cv::Mat& img) {
-    if (!debug_)
+    if (!save_debug_images_)
         return;
     if (img.empty())
         return;

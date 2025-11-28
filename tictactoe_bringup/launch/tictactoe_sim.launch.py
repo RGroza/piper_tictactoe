@@ -10,12 +10,23 @@ def generate_launch_description():
     pkg_share = get_package_share_directory('tictactoe_bringup')
     webpage_dir = os.path.join(pkg_share, 'webpage')
 
-    moveit_launch = IncludeLaunchDescription(
+    piper_gazebo = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory('piper_gazebo'),
+                'launch',
+                'piper_with_gripper',
+                'piper_gazebo.launch.py'
+            )
+        )
+    )
+
+    move_group_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
                 get_package_share_directory('piper_with_gripper_moveit'),
                 'launch',
-                'move_group.launch.py'
+                'move_group_sim.launch.py'
             )
         )
     )
@@ -25,7 +36,7 @@ def generate_launch_description():
         executable='board_processor_node',
         name='ttt_board_processor',
         output='screen',
-        parameters=[{'use_sim_time': False}]
+        parameters=[{'use_sim_time': True}]
     )
 
     trajectory_server = Node(
@@ -33,7 +44,7 @@ def generate_launch_description():
         executable='trajectory_server',
         name='ttt_trajectory_server',
         output='screen',
-        parameters=[{'use_sim_time': False}]
+        parameters=[{'use_sim_time': True}]
     )
 
     move_manager = Node(
@@ -41,7 +52,7 @@ def generate_launch_description():
         executable='move_manager_node',
         name='ttt_manager',
         output='screen',
-        parameters=[{'use_sim_time': False}]
+        parameters=[{'use_sim_time': True}]
     )
 
     rosbridge_xml = IncludeLaunchDescription(
@@ -68,7 +79,8 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        moveit_launch,
+        piper_gazebo,
+        move_group_sim,
         board_processor,
         trajectory_server,
         move_manager,

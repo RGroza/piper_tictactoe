@@ -44,7 +44,7 @@
                             <!-- Background board image -->
                             <img src="tictactoe_board.png" class="board-image">
 
-                            <template v-if="gridDetected">
+                            <template v-if="boardDetected">
                                 <!-- Grid lines -->
                                 <div class="grid-line v1"></div>
                                 <div class="grid-line v2"></div>
@@ -52,11 +52,13 @@
                                 <div class="grid-line h2"></div>
 
                                 <!-- 9 clickable cells -->
-                                <div v-for="n in 9" :key="n" class="cell-btn" :class="{ played: board[n-1] !== null }"
-                                    @click="board[n-1] === null && !winLine && playerMove(n)"
+                                <div v-for="n in 9" :key="n" class="cell-btn"
+                                    :class="{ played: board[n-1] !== null && board[n-1] !== -1 }"
+                                    @click="(board[n-1] === null || board[n-1] === -1) && !winLine && playerMove(n)"
                                     style="cursor: pointer; user-select: none;">
-                                    <span v-if="board[n-1]" class="cell-symbol">
-                                        <template v-if="board[n-1] === 'X'">
+                                    <span v-if="board[n-1] !== null && board[n-1] !== -1 || winLine"
+                                        class="cell-symbol">
+                                        <template v-if="board[n-1] === 1">
                                             <svg viewBox="0 0 100 100" class="cell-svg">
                                                 <line x1="20" y1="20" x2="80" y2="80" stroke="#00e0ff" stroke-width="10"
                                                     stroke-linecap="round" />
@@ -64,11 +66,14 @@
                                                     stroke-linecap="round" />
                                             </svg>
                                         </template>
-                                        <template v-else-if="board[n-1] === 'O'">
+                                        <template v-else-if="board[n-1] === 0">
                                             <svg viewBox="0 0 100 100" class="cell-svg">
                                                 <circle cx="50" cy="50" r="35" stroke="#00e0ff" stroke-width="10"
                                                     fill="none" />
                                             </svg>
+                                        </template>
+                                        <template v-else>
+                                            <svg viewBox="0 0 100 100" class="cell-svg"></svg>
                                         </template>
                                     </span>
                                     <span v-else>{{ n }}</span>
@@ -97,22 +102,22 @@
                                 <div class="symbol-col">
                                     <div class="symbol-row">
                                         <label>Player:</label>
-                                        <select v-model="playerSymbol" @change="playerChanged" :disabled="gameStarted">
-                                            <option value="X">X</option>
-                                            <option value="O">O</option>
+                                        <select v-model.number="playerSymbol" @change="playerChanged">
+                                            <option :value="1">X</option>
+                                            <option :value="0">O</option>
                                         </select>
                                     </div>
                                     <div class="symbol-row">
                                         <label>Robot:</label>
-                                        <select v-model="robotSymbol" @change="robotChanged" :disabled="gameStarted">
-                                            <option value="X">X</option>
-                                            <option value="O">O</option>
+                                        <select v-model.number="robotSymbol" @change="robotChanged">
+                                            <option :value="1">X</option>
+                                            <option :value="0">O</option>
                                         </select>
                                     </div>
                                 </div>
 
-                                <button class="btn" @click="startGame" v-if="!gameStarted">Start Game</button>
-                                <button class="btn" @click="endGame" v-if="gameStarted">End Game</button>
+                                <button class="btn" @click="startGame" v-if="!boardDetected">Start Game</button>
+                                <button class="btn" @click="endGame" v-if="boardDetected">End Game</button>
                                 <button class="btn" @click="robotMove">Robot Move</button>
                             </div>
                         </div>

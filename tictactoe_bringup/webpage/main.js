@@ -6,12 +6,14 @@ const app = Vue.createApp({
             videoHost: "localhost:8080",
             connected: false,
             selectedImage: "final",
-            playerSymbol: "X",
-            robotSymbol: "O",
+            playerSymbol: 1,
+            robotSymbol: 0,
             board: Array(9).fill(null),
-            gridDetected: false,
+            boardDetected: false,
             winLine: null, // {from: idx1, to: idx2}
             gameStarted: false,
+            boardStateTopic: null,
+            gameResultTopic: null,
         };
     },
 
@@ -49,6 +51,11 @@ const app = Vue.createApp({
 
                 this.startCameraStream();
                 this.startImageStreams();
+
+                this.updateRobotSymbol();
+
+                this.subscribeBoardState();
+                this.subscribeGameResult();
             });
 
             this.ros.on("error", (err) => {
@@ -66,6 +73,8 @@ const app = Vue.createApp({
                 this.ros.close();
                 this.connected = false;
             }
+            this.unsubscribeBoardState();
+            this.unsubscribeGameResult();
         },
 
         startCameraStream() {
@@ -130,8 +139,6 @@ const app = Vue.createApp({
         },
 
         moveRequest(mode, symbol, cell_number) {
-            if (this.board[cell_number - 1] !== null && mode === 0) return;
-
             const service = new ROSLIB.Service({
                 ros: this.ros,
                 name: "/play_move",
@@ -141,31 +148,12 @@ const app = Vue.createApp({
             const request = new ROSLIB.ServiceRequest({});
             request.mode = mode;
             request.cell_number = cell_number;
-
-            if (symbol === "O") {
-                request.symbol = 0;
-            } else {
-                request.symbol = 1;
-            }
+            request.symbol = symbol; // symbol is now integer 0 or 1
 
             console.log("Calling /play_move with symbol:", symbol);
 
             service.callService(request, (result) => {
                 console.log("Service response:", result);
-                if (result && result.success) {
-                    this.board[result.cell_number - 1] = symbol;
-
-                    // Call processBoard to update detection images
-                    this.processBoard();
-                    this.processBoard();
-
-                    // Check if game is over
-                    if (result.game_over) {
-                        let cell1 = result.winner[1];
-                        let cell2 = result.winner[2];
-                        this.winLine = { from: cell1, to: cell2 };
-                    }
-                }
             });
         },
 
@@ -210,18 +198,87 @@ const app = Vue.createApp({
 
             service.callService(request, (result) => {
                 console.log("Service response:", result);
-                this.board = Array(9).fill(null);
-                this.gridDetected = false;
+                this.boardDetected = false;
                 this.winLine = null;
             });
         },
 
         playerChanged() {
-            this.robotSymbol = this.playerSymbol === "X" ? "O" : "X";
+            this.robotSymbol = this.playerSymbol === 1 ? 0 : 1;
+            this.updateRobotSymbol();
         },
 
         robotChanged() {
-            this.playerSymbol = this.robotSymbol === "X" ? "O" : "X";
+            this.playerSymbol = this.robotSymbol === 1 ? 0 : 1;
+            this.updateRobotSymbol();
+        },
+
+        updateRobotSymbol() {
+            const service = new ROSLIB.Service({
+                ros: this.ros,
+                name: '/ttt_manager/set_parameters',
+                serviceType: 'rcl_interfaces/srv/SetParameters'
+            });
+
+            let val = this.robotSymbol;
+
+            const request = new ROSLIB.ServiceRequest({
+                parameters: [
+                    {
+                        name: 'robot_symbol',
+                        value: { type: 2, integer_value: val }
+                    }
+                ]
+            });
+
+            service.callService(request, (result) => {
+                console.log('Set parameter result:', result);
+            });
+        },
+
+        subscribeBoardState() {
+            if (this.boardStateTopic) return;
+            this.boardStateTopic = new ROSLIB.Topic({
+                ros: this.ros,
+                name: "/board_state",
+                messageType: "board_perception/msg/BoardState"
+            });
+
+            this.boardStateTopic.subscribe((msg) => {
+                if (msg.board_detected) {
+                    this.boardDetected = true;
+                    this.board = msg.board.slice();
+                }
+            });
+        },
+
+        unsubscribeBoardState() {
+            if (this.boardStateTopic) {
+                this.boardStateTopic.unsubscribe();
+                this.boardStateTopic = null;
+            }
+        },
+
+        subscribeGameResult() {
+            if (this.gameResultTopic) return;
+            this.gameResultTopic = new ROSLIB.Topic({
+                ros: this.ros,
+                name: "/game_result",
+                messageType: "move_manager/msg/GameResult"
+            });
+
+            this.gameResultTopic.subscribe((msg) => {
+                if (msg.game_over && msg.winner !== -1) {
+                    this.winLine = { from: msg.winner_start_cell, to: msg.winner_end_cell };
+                }
+            });
+        },
+
+        unsubscribeGameResult() {
+            if (this.gameResultTopic) {
+                this.gameResultTopic.unsubscribe();
+                this.gameResultTopic = null;
+            }
         },
 
         getCellCenter(idx) {

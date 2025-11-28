@@ -23,13 +23,13 @@ constexpr float GRID_Y_OFFSET = -0.02f;
 } // namespace
 
 TrajectoryExecutor::TrajectoryExecutor(rclcpp::Node::SharedPtr base_node) : base_node_(std::move(base_node)) {
-    base_node_->set_parameter(rclcpp::Parameter("use_sim_time", false));
+    bool use_sim_time = false;
+    base_node_->get_parameter_or("use_sim_time", use_sim_time, false);
 
     rclcpp::NodeOptions node_options;
     node_options.automatically_declare_parameters_from_overrides(true);
-
+    node_options.append_parameter_override("use_sim_time", use_sim_time);
     move_group_node_ = rclcpp::Node::make_shared("move_group_node", node_options);
-    move_group_node_->set_parameter(rclcpp::Parameter("use_sim_time", false));
 
     executor_.add_node(move_group_node_);
     std::thread([this]() { executor_.spin(); }).detach();

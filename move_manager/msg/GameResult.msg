@@ -1,0 +1,4 @@
+bool game_over
+int32 winner
+int32 winner_start_cell
+int32 winner_end_cell

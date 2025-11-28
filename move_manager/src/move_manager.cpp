@@ -1,14 +1,18 @@
 #include <board_perception/srv/process_board.hpp>
 #include <piper_trajectory/srv/execute_trajectory.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include "board_perception/msg/board_state.hpp"
+#include "move_manager/msg/game_result.hpp"
 #include "move_manager/srv/play_move.hpp"
+#include "rcl_interfaces/msg/set_parameters_result.hpp"
 
 using namespace std;
 using namespace std::chrono_literals;
+using Board = array<array<int, 3>, 3>;
 
 class MoveManager : public rclcpp::Node {
   public:
-    MoveManager() : Node("ttt_move_manager") {
+    MoveManager() : Node("ttt_manager") {
         service_callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
         client_callback_group_  = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
 
@@ -16,121 +20,133 @@ class MoveManager : public rclcpp::Node {
             "play_move", std::bind(&MoveManager::handleService, this, std::placeholders::_1, std::placeholders::_2),
             rmw_qos_profile_services_default, service_callback_group_);
 
-        board_processor_client_ = this->create_client<board_perception::srv::ProcessBoard>(
-            "process_board", rmw_qos_profile_services_default, client_callback_group_);
-
         trajectory_client_ = this->create_client<piper_trajectory::srv::ExecuteTrajectory>(
             "execute_trajectory", rmw_qos_profile_services_default, client_callback_group_);
+
+        board_state_subscriber_ = this->create_subscription<board_perception::msg::BoardState>(
+            "/board_state", 10, std::bind(&MoveManager::boardStateCallback, this, std::placeholders::_1));
+
+        game_result_publisher_ = this->create_publisher<move_manager::msg::GameResult>("game_result", 10);
+
+        this->declare_parameter<int>("robot_symbol", 0); // 0 for 'O', 1 for 'X'
+        robot_symbol_ = this->get_parameter("robot_symbol").as_int();
+
+        param_callback_handle_ =
+            this->add_on_set_parameters_callback(std::bind(&MoveManager::onSetParameters, this, std::placeholders::_1));
+
+        board_state_          = {{{-1, -1, -1}, {-1, -1, -1}, {-1, -1, -1}}};
+        board_state_received_ = false;
+
+        auto_robot_move_ = true;
+        robot_moving_    = false;
     }
 
   private:
+    void boardStateCallback(const board_perception::msg::BoardState::SharedPtr msg) {
+        if (msg->board.size() != 9) {
+            RCLCPP_WARN(get_logger(), "Received board state of invalid size");
+            return;
+        }
+        if (msg->success == false) {
+            return;
+        }
+
+        // Convert flat board to 2D grid
+        Board new_board_state;
+        for (int i = 0; i < 9; ++i)
+            new_board_state[i / 3][i % 3] = msg->board[i];
+
+        // Check if there is any change in the board state
+        bool new_state = false;
+        for (size_t i = 0; i < 3; ++i)
+            for (size_t j = 0; j < 3; ++j)
+                if (board_state_[i][j] != new_board_state[i][j] && board_state_[i][j] == -1) {
+                    new_state = true;
+                    RCLCPP_INFO(get_logger(), "New move detected at cell %zu", i * 3 + j + 1);
+                    break; // Assume only one move can be made at a time
+                }
+
+        if (!new_state)
+            return; // No new move detected
+
+        // Update the stored board state
+        board_state_          = new_board_state;
+        board_state_received_ = true;
+
+        // Auto-play robot move if it's robot's turn
+        if (auto_robot_move_) {
+            RCLCPP_INFO(get_logger(), "Playing robot move automatically");
+            if (robotMove().first == false) {
+                RCLCPP_ERROR(get_logger(), "Robot move failed -- %s", robotMove().second.c_str());
+            }
+        }
+
+        // Check for winner or draw
+        pair<int, pair<int, int>> winner = checkWinner(new_board_state);
+        if (winner.first != -1) {
+            RCLCPP_INFO(get_logger(), "Game over! Winner: Player %d", winner.first + 1);
+            auto game_result              = move_manager::msg::GameResult();
+            game_result.game_over         = true;
+            game_result.winner            = winner.first;
+            game_result.winner_start_cell = winner.second.first;
+            game_result.winner_end_cell   = winner.second.second;
+            game_result_publisher_->publish(game_result);
+        } else if (isBoardFull(new_board_state)) {
+            RCLCPP_INFO(get_logger(), "Game over! It's a draw.");
+            auto game_result      = move_manager::msg::GameResult();
+            game_result.game_over = true;
+            game_result.winner    = -1; // Indicate draw
+            game_result_publisher_->publish(game_result);
+        }
+    }
+
     void handleService(const std::shared_ptr<move_manager::srv::PlayMove::Request> request,
                        std::shared_ptr<move_manager::srv::PlayMove::Response> response) {
         RCLCPP_INFO(get_logger(), "Move request received (mode=%d)", request->mode);
-        // Request current board state from perception service
-        auto board_future = board_processor_client_->async_send_request(
-            std::make_shared<board_perception::srv::ProcessBoard::Request>());
-
-        // Check for timeout or failure in board perception
-        if (board_future.wait_for(2s) != std::future_status::ready) {
-            RCLCPP_ERROR(get_logger(), "process_board timed out");
-            serviceFailure(response, "Board processing did not respond");
+        if (robot_moving_) {
+            serviceFailure(response, "Robot is currently moving, please wait");
             return;
         }
 
-        auto board_response = board_future.get();
-
-        if (!board_response->success) {
-            serviceFailure(response, "Board processing failed");
-            return;
-        }
-
-        // Convert float board into grid
-        vector<vector<int>> board(3, vector<int>(3, -1));
-        for (int i = 0; i < 9; i++)
-            board[i / 3][i % 3] = board_response->board[i];
-
-        RCLCPP_INFO(get_logger(), "Current board state:");
-        printBoard(board);
-
-        // Validate board state
-        if (isBoardFull(board)) {
-            serviceFailure(response, "Board is already full");
-            return;
-        }
-        if (!isBoardValid(board, request->symbol)) {
-            serviceFailure(response, "Current board state is invalid for the given symbol");
-            return;
-        }
-        if (checkWinner(board).first != -1) {
-            serviceFailure(response, "Game is already over");
-            return;
-        }
-
-        int cell;
         if (request->mode == 0) {
             // Handle human move: validate cell number and occupancy
-            if (request->cell_number < 1 || request->cell_number > 9) {
+            int cell = request->cell_number;
+            if (cell < 1 || cell > 9) {
                 serviceFailure(response, "Invalid human move: cell number out of range");
                 return;
             }
-            if (board_response->board[request->cell_number - 1] != -1) {
+            if (board_state_[(cell - 1) / 3][(cell - 1) % 3] != -1) {
                 serviceFailure(response, "Invalid human move: cell already occupied");
                 return;
             }
-            cell = request->cell_number;
-            RCLCPP_INFO(get_logger(), "Human move on cell %d", cell);
-        } else {
-            // Handle robot move: compute best move using minimax
-            cell = this->bestMove(board, request->symbol) + 1;
-            if (cell < 1 || cell > 9) {
-                serviceFailure(response, "Robot best move not found");
+            // Check if requested symbol is opposite of robot's symbol
+            if (request->symbol == robot_symbol_) {
+                serviceFailure(response, "Invalid human move: symbol matches robot's symbol");
                 return;
             }
-            RCLCPP_INFO(this->get_logger(), "Robot best move on cell %d", cell);
-        }
+            // Validate board state
+            pair<bool, string> validateResult = validateBoard(request->symbol);
+            if (validateResult.first == false) {
+                serviceFailure(response, validateResult.second);
+                return;
+            }
 
-        response->cell_number = cell;
+            // Execute human move
+            RCLCPP_INFO(get_logger(), "Human move on cell %d", cell);
+            auto result = moveRequest(request->symbol, cell);
 
-        // Prepare and send trajectory execution request
-        auto trajectory_request         = std::make_shared<piper_trajectory::srv::ExecuteTrajectory::Request>();
-        trajectory_request->type        = request->symbol;
-        trajectory_request->cell_number = cell;
-        trajectory_request->return_home = true;
-
-        auto trajectory_future = trajectory_client_->async_send_request(trajectory_request);
-
-        // Update board with the new move
-        board[(cell - 1) / 3][(cell - 1) % 3] = request->symbol;
-        RCLCPP_INFO(get_logger(), "Board state after requested move:");
-        printBoard(board);
-
-        // Check for winner
-        pair<int, pair<int, int>> winner = checkWinner(board);
-        if (winner.first != -1) {
-            response->game_over = true;
-            response->winner[0] = winner.first;
-            response->winner[1] = winner.second.first;
-            response->winner[2] = winner.second.second;
+            if (!result.first) {
+                serviceFailure(response, result.second);
+                return;
+            }
         } else {
-            response->game_over = false;
-        }
+            // Handle robot move
+            auto result = robotMove();
 
-        // Flatten board back into response->board
-        for (int i = 0; i < 9; i++)
-            response->board[i] = board[i / 3][i % 3];
-
-        // Wait for trajectory execution and handle timeout/failure
-        if (trajectory_future.wait_for(30s) != std::future_status::ready) {
-            serviceFailure(response, "Trajectory execution timeout out");
-            return;
-        }
-
-        auto trajectory_response = trajectory_future.get();
-
-        if (!trajectory_response->success) {
-            serviceFailure(response, "Trajectory execution failed");
-            return;
+            if (!result.first) {
+                serviceFailure(response, result.second);
+                return;
+            }
         }
 
         // Set success message and response
@@ -141,16 +157,92 @@ class MoveManager : public rclcpp::Node {
 
     void serviceFailure(std::shared_ptr<move_manager::srv::PlayMove::Response> response, const std::string& msg) {
         response->message = msg;
-        RCLCPP_ERROR(get_logger(), response->message.c_str());
-        response->board.fill(-1);
+        RCLCPP_WARN(get_logger(), response->message.c_str());
         response->success = false;
+    }
+
+    pair<bool, string> moveRequest(int symbol, int cell) {
+        // Prepare and send trajectory execution request
+        auto trajectory_request         = std::make_shared<piper_trajectory::srv::ExecuteTrajectory::Request>();
+        trajectory_request->type        = symbol;
+        trajectory_request->cell_number = cell;
+        trajectory_request->return_home = true;
+
+        auto trajectory_future = trajectory_client_->async_send_request(trajectory_request);
+
+        // Wait for trajectory execution and handle timeout/failure
+        if (trajectory_future.wait_for(30s) != std::future_status::ready)
+            return {false, "Trajectory execution timeout"};
+
+        auto trajectory_response = trajectory_future.get();
+
+        if (!trajectory_response->success)
+            return {false, "Trajectory execution failed"};
+
+        robot_moving_ = false;
+        return {true, ""};
+    }
+
+    pair<bool, string> robotMove() {
+        robot_moving_                     = true;
+        pair<bool, string> validateResult = validateBoard(robot_symbol_);
+        if (validateResult.first == false)
+            return {false, validateResult.second};
+
+        // Handle robot move: compute best move using minimax
+        int cell = bestMove(board_state_, robot_symbol_) + 1;
+        if (cell < 1 || cell > 9)
+            return {false, "Robot best move not found"};
+
+        RCLCPP_INFO(this->get_logger(), "Robot best move on cell %d", cell);
+
+        return moveRequest(robot_symbol_, cell);
+    }
+
+    pair<bool, string> validateBoard(int symbol) {
+        // Use the latest board state from the subscriber
+        if (!board_state_received_)
+            return {false, "No board state received yet"};
+
+        RCLCPP_INFO(get_logger(), "Current board state:");
+        printBoard(board_state_);
+
+        // Validate board state
+        if (isBoardFull(board_state_))
+            return {false, "Board is already full"};
+        if (!isBoardValid(board_state_, symbol))
+            return {false, "Current board state is invalid for the given symbol"};
+        if (checkWinner(board_state_).first != -1)
+            return {false, "Game is already over"};
+
+        return {true, ""};
+    }
+
+    rcl_interfaces::msg::SetParametersResult onSetParameters(const std::vector<rclcpp::Parameter>& params) {
+        rcl_interfaces::msg::SetParametersResult result;
+        result.successful = true;
+        result.reason     = "success";
+
+        for (const auto& param : params) {
+            if (param.get_name() == "robot_symbol") {
+                int val = param.as_int();
+                if (val == 0 || val == 1) {
+                    robot_symbol_ = val;
+                    RCLCPP_INFO(this->get_logger(), "robot_symbol updated to %d", robot_symbol_);
+                } else {
+                    result.successful = false;
+                    result.reason     = "robot_symbol must be 0 or 1";
+                }
+            }
+        }
+        return result;
     }
 
     // -------------------------
     // Tic-Tac-Toe Minimax Logic
     // -------------------------
 
-    int bestMove(vector<vector<int>> board, int robot_symbol) {
+    int bestMove(Board board, int robot_symbol) {
         int best_score = numeric_limits<int>::lowest();
         int best_cell  = -1;
 
@@ -185,7 +277,7 @@ class MoveManager : public rclcpp::Node {
         return best_cell;
     }
 
-    int minimax(vector<vector<int>>& b, int depth, bool is_maximizing, int robot_symbol) {
+    int minimax(Board& b, int depth, bool is_maximizing, int robot_symbol) {
         int winner       = checkWinner(b).first;
         int human_symbol = (robot_symbol == 0 ? 1 : 0);
 
@@ -231,7 +323,7 @@ class MoveManager : public rclcpp::Node {
         }
     }
 
-    pair<int, pair<int, int>> checkWinner(const vector<vector<int>>& b) {
+    pair<int, pair<int, int>> checkWinner(const Board& b) {
         // Rows
         for (int i = 0; i < 3; i++)
             if (b[i][0] != -1 && b[i][0] == b[i][1] && b[i][1] == b[i][2])
@@ -252,7 +344,7 @@ class MoveManager : public rclcpp::Node {
         return {-1, {-1, -1}}; // no winner
     }
 
-    bool isBoardFull(const vector<vector<int>>& board) {
+    bool isBoardFull(const Board& board) {
         for (const auto& row : board)
             for (int c : row)
                 if (c == -1)
@@ -260,7 +352,7 @@ class MoveManager : public rclcpp::Node {
         return true;
     }
 
-    bool isBoardValid(const vector<vector<int>>& board, int my_symbol) {
+    bool isBoardValid(const Board& board, int my_symbol) {
         int other_symbol       = my_symbol == 0 ? 1 : 0;
         int my_symbol_count    = 0;
         int other_symbol_count = 0;
@@ -275,7 +367,7 @@ class MoveManager : public rclcpp::Node {
         return (my_symbol_count == other_symbol_count) || (my_symbol_count == other_symbol_count - 1);
     }
 
-    void printBoard(const vector<vector<int>>& board) {
+    void printBoard(const Board& board) {
         for (int i = 0; i < 3; ++i) {
             for (int j = 0; j < 3; ++j) {
                 char symbol;
@@ -298,9 +390,16 @@ class MoveManager : public rclcpp::Node {
 
     rclcpp::CallbackGroup::SharedPtr service_callback_group_;
     rclcpp::CallbackGroup::SharedPtr client_callback_group_;
-    rclcpp::Client<board_perception::srv::ProcessBoard>::SharedPtr board_processor_client_;
     rclcpp::Client<piper_trajectory::srv::ExecuteTrajectory>::SharedPtr trajectory_client_;
     rclcpp::Service<move_manager::srv::PlayMove>::SharedPtr play_move_service_;
+    rclcpp::Subscription<board_perception::msg::BoardState>::SharedPtr board_state_subscriber_;
+    rclcpp::Publisher<move_manager::msg::GameResult>::SharedPtr game_result_publisher_;
+    rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_callback_handle_;
+    Board board_state_;
+    bool board_state_received_;
+    bool auto_robot_move_;
+    bool robot_moving_;
+    int robot_symbol_;
 };
 
 int main(int argc, char** argv) {
