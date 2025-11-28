@@ -40,6 +40,7 @@ class MoveManager : public rclcpp::Node {
 
         board_state_          = {{{-1, -1, -1}, {-1, -1, -1}, {-1, -1, -1}}};
         board_state_received_ = false;
+        new_state_count_ = 0;
 
         auto_robot_move_ = true;
         robot_moving_    = false;
@@ -52,9 +53,13 @@ class MoveManager : public rclcpp::Node {
             RCLCPP_WARN(get_logger(), "Received board state of invalid size");
             return;
         }
-        if (!msg->success) {
+        if (!msg->success)
             return;
-        }
+        if (robot_moving_)
+            return;
+
+        if (msg->board_detected)
+            board_state_received_ = true;
 
         // Convert flat board to 2D grid
         Board new_board_state;
@@ -63,29 +68,34 @@ class MoveManager : public rclcpp::Node {
 
         // Check if there is any change in the board state
         bool new_state = false;
+        bool new_state_confirmed = false;
         for (size_t i = 0; i < 3; ++i)
             for (size_t j = 0; j < 3; ++j)
                 if (board_state_[i][j] != new_board_state[i][j] && board_state_[i][j] == -1) {
-                    new_state = true;
-                    RCLCPP_INFO(get_logger(), "New move detected at cell %zu", i * 3 + j + 1);
-                    break; // Assume only one move can be made at a time
+                    // Require several new states in a row to trigger new move
+                    if (new_state_count_ < 5) {
+                        new_state_count_++;
+                        new_state = true;
+                    } else {
+                        new_state_count_ = 0;
+                        new_state_confirmed = true;
+                        RCLCPP_INFO(get_logger(), "New move detected at cell %zu", i * 3 + j + 1);
+                        break; // Assume only one move can be made at a time
+                    }
                 }
 
         if (!new_state)
+            new_state_count_ = 0;
+        if (!new_state_confirmed)
             return; // No new move detected
 
         // Update the stored board state
-        board_state_          = new_board_state;
-        board_state_received_ = true;
+        board_state_ = new_board_state;
 
-        // Auto-play robot move if it's robot's turn
-        if (auto_robot_move_ && !robot_moving_ && robot_turn_) {
-            RCLCPP_INFO(get_logger(), "Playing robot move automatically");
-            pair<bool, string> robot_move_result = robotMove();
-            if (robot_move_result.first == false) {
-                RCLCPP_WARN(get_logger(), "Robot move failed -- %s", robot_move_result.second.c_str());
-            }
-        }
+        if (!robot_turn_)
+            robot_turn_ = true;
+
+        robotAutoMove();
 
         // Check for winner or draw
         pair<int, pair<int, int>> winner = checkWinner(new_board_state);
@@ -220,6 +230,21 @@ class MoveManager : public rclcpp::Node {
         return moveRequest(robot_symbol_, cell);
     }
 
+    void robotAutoMove() {
+        // Auto-play robot move if it's robot's turn
+        RCLCPP_INFO(get_logger(), "auto_robot_move_: %s, robot_moving_: %s, robot_turn_: %s",
+                    auto_robot_move_ ? "true" : "false", robot_moving_ ? "true" : "false",
+                    robot_turn_ ? "true" : "false");
+
+        if (auto_robot_move_ && !robot_moving_ && robot_turn_) {
+            RCLCPP_INFO(get_logger(), "Robot playing move automatically");
+            pair<bool, string> robot_move_result = robotMove();
+            if (robot_move_result.first == false) {
+                RCLCPP_WARN(get_logger(), "Robot move failed -- %s", robot_move_result.second.c_str());
+            }
+        }
+    }
+
     pair<bool, string> validateBoard(int symbol) {
         // Use the latest board state from the subscriber
         if (!board_state_received_)
@@ -262,8 +287,17 @@ class MoveManager : public rclcpp::Node {
             if (param.get_name() == "game_started") {
                 game_started_ = param.as_bool();
                 RCLCPP_INFO(this->get_logger(), "game_started updated to %s", game_started_ ? "true" : "false");
-                if (robot_symbol_ == 1 && game_started_)
-                    robot_turn_ = true; // If robot is 'X' and game starts, it's robot's turn
+                if (game_started_) {
+                    // Reset board state
+                    board_state_ = {{{-1, -1, -1}, {-1, -1, -1}, {-1, -1, -1}}};
+
+                    if (robot_symbol_ == 1)
+                        robot_turn_ = true;
+                    else
+                        robot_turn_ = false;
+
+                    robotAutoMove();
+                }
             }
         }
         return result;
@@ -432,6 +466,7 @@ class MoveManager : public rclcpp::Node {
     bool robot_moving_;
     bool robot_turn_;
     bool game_started_;
+    int new_state_count_;
     int robot_symbol_;
 };
 
